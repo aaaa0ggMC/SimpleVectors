@@ -116,3 +116,46 @@
 1629628100 source:c:\users\yd\desktop\c++\fft\rc.rc
 	"res.h"
 
+1629627328 source:c:\users\yd\desktop\c++\fft\simplevectors\cclock.cpp
+	"CClock.h"
+
+1629627298 c:\users\yd\desktop\c++\fft\simplevectors\cclock.h
+	<windows.h>
+
+1687003175 source:c:\users\yd\desktop\c++\fft\simplevectors\rc.rc
+	"res.h"
+
+1687005501 c:\users\yd\desktop\c++\fft\simplevectors\res.h
+
+1687005117 source:c:\users\yd\desktop\c++\fft\simplevectors\main.cpp
+	<windows.h>
+	<math.h>
+	<cmath>
+	<vector>
+	<stdio.h>
+	<time.h>
+	<gl/gl.h>
+	<gL/glext.h>
+	<gL/glu.h>
+	<stdlib.h>
+	<iostream>
+	<fstream>
+	<windowsx.h>
+	<pthread.h>
+	<CClock.h>
+	<string>
+	"vmath.hpp"
+	"res.h"
+
+1687004437 c:\users\yd\desktop\mineterraria\#innerprojs\aaaa0ggmclib\headers\cclock.h
+	<windows.h>
+
+1659830278 c:\users\yd\desktop\c++\fft\simplevectors\vmath.hpp
+	<iostream>
+	<vector>
+	<stdio.h>
+	<string>
+	<tgmath.h>
+	<fstream>
+	<ctype.h>
+

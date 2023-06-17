@@ -12,9 +12,14 @@
 #include <fstream>
 #include <windowsx.h>
 #include <pthread.h>
+#include <string>
 #include "vmath.hpp"
 #include "res.h"
-#include "CClock.h"
+
+#include <CClock.h>
+#include <Translator.h>
+#include <MultiEnString.h>
+#include <spdlog.h>
 
 #define Block(X)
 #define STOP_PLAY_BTN 1234
@@ -27,9 +32,12 @@
 #define MENU(X) ((HMENU)(X))
 #define RELOAD_PAGE 1239
 #define OPEN_LOADED_FILE 1240
+#define OPEN_HELP_PAGE 1241
 #define GetLimMs ((DWORD)(1000/(FRAME_LIMIT)))
 
 using namespace std;
+using namespace cck;
+using namespace alib;
 
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 void EnableOpenGL(HWND hwnd, HDC*, HGLRC*);
@@ -52,7 +60,13 @@ float fenv = -1;
 int store_status = 0;
 bool rderr = false;
 
+Translator ts;
+LogSaver saver;
+LogFactory l("FFT",true);
+
+
 HWND subHWND = NULL,btn_tg = NULL,btn_tghd = NULL,btn_tgcr = NULL,btn_storeData = NULL,btn_rp = NULL,btn_rl = NULL,btn_of = NULL;
+HWND go4help = NULL;
 HDC subDC = NULL;
 DWORD timeDL = 0;
 BOOL bQuit = FALSE;
@@ -65,6 +79,7 @@ Vector pos = {0,0};
 int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow){
 
     PreInit();
+    saver.SetFileOutput(TRANSLATE_PATH "/log.txt");
 
     int preFrameC = 0,frameGoes = 0,mxFrame = 0;
     float tx,ty;
@@ -80,6 +95,7 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
     Clock fpsClk(false);
 
     ssStr = "开始读取向量数据.";
+    l.info(ssStr);
 
     point0 = readVectors("fft.math",err,partx,party,speed,MXP,FRAME_LIMIT,scaleSpeed,mvSp,fenv,ssStr);
 
@@ -145,6 +161,8 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
         btn_of = CreateWindowEx(0,"BUTTON","OF",WS_CHILD | WS_VISIBLE,360,105,
                               40,30,subHWND,MENU(OPEN_LOADED_FILE),hInstance,NULL);
 
+        go4help = CreateWindowEx(0,"BUTTON","HP",WS_CHILD | WS_VISIBLE,360,140,
+                              40,30,subHWND,MENU(OPEN_HELP_PAGE),hInstance,NULL);
 
         flushing = false;
 
@@ -407,6 +425,13 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
     /* destroy the window explicitly */
     DestroyWindow(hwnd);
 
+    ///保存数据
+    ofstream ofs(CONFIG_PATH);
+    if(!ofs.bad()){
+        ofs << ts.Translate(VERIFY_TOKEN,"en_us").GetUTF8();
+    }
+    ofs.close();
+
     return msg.wParam;
 }
 
@@ -433,6 +458,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 break;
             case OPEN_LOADED_FILE:
                 system("start fft.math");
+                break;
+            case OPEN_HELP_PAGE:
+                system("start data\\help.html");
                 break;
             case HIDE_SHOW_LINES:
                 showLines = !showLines;
@@ -708,6 +736,16 @@ void PreInit(){
     pthread_t flushT = 0;
     pthread_create(&flushT,NULL,FlushScreen,NULL);
     pthread_detach(flushT);
+    ///加载翻译
+    ts.LoadTranslateFiles(TRANSLATE_PATH);
+    ///读取config
+    ifstream config(CONFIG_PATH);
+    if(!config.bad()){
+        string s = "";
+        config >> s;
+        ts.LoadTranslate(s);
+        config.close();
+    }else ts.LoadTranslate("en_us");
 }
 
 void * FlushScreen(void *){
