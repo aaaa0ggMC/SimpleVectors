@@ -1,0 +1,9 @@
+vl 2048
+fl 2000
+p 40 30
+speed 10
+mp 2
+ss 0.1
+v x10 y8 r180 t0
+v x8 y10 r60 t1.72
+v x1 y1 r30 t3
