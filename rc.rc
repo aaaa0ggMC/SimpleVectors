@@ -1,33 +1,3 @@
-#include "res.h"
-#define VOS_NT_WINDOWS32    0x00040004L
-#define VFT_APP             0x00000001L
+#include "rc.h"
 
-//Main ICON
 MAIN_ICON ICON "fft.ico"
-
-//include version information in .exe, modify these values to match your needs
-1 VERSIONINFO
-FILEVERSION 0,0,0,1
-PRODUCTVERSION 0,0,8,1
-FILETYPE VFT_APP
-{
-  BLOCK "StringFileInfo"
-	 {
-		 BLOCK "040904E4"
-		 {
-			 VALUE "CompanyName", "StudyAll"
-			 VALUE "FileVersion", "0.5"
-			 VALUE "FileDescription", "看美丽的涩图(晦涩难懂的图，别想歪了)"
-			 VALUE "LegalCopyright", "没有，Copyright(C)aaaa0ggMC"
-			 VALUE "LegalTrademarks", "https://space.bilibili.com/394099679  aaaa0ggMC"
-			 VALUE "OriginalFilename", "fft.exe"
-			 VALUE "ProductName", "LookingForFFT"
-			 VALUE "ProductVersion", "0.0.0.0.5"
-		 }
-	 }
-  BLOCK "VarFileInfo"
-	 {
-		 VALUE "Translation", 0x0804, 2052 //中文
-	 }
-}
-

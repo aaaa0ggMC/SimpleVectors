@@ -3,9 +3,8 @@ s 10
 vl 2048 # #号后要加上空格否则报错
 fl 2000 # 放弃休眠
 ss 0.01
-fenv 10 # 存储精度
-mp 1
+fenv 5 # 存储精度
+mp 0.2
 v x10 y10 r0 t3
 v x10 y-2 r0 t-3
 v x1 y1 r0 t-2
-v x3 y4 r3 t-5

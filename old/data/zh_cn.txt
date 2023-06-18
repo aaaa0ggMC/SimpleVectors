@@ -1,0 +1,4 @@
+{
+    "Language":"¼òÌåÖÐÎÄ",
+    "Access":"zh_cn"
+}

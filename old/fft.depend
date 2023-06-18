@@ -127,10 +127,11 @@
 
 1687005501 c:\users\yd\desktop\c++\fft\simplevectors\res.h
 
-1687005117 source:c:\users\yd\desktop\c++\fft\simplevectors\main.cpp
+1687044817 source:c:\users\yd\desktop\c++\fft\simplevectors\main.cpp
 	<windows.h>
 	<math.h>
 	<cmath>
+	<atomic>
 	<vector>
 	<stdio.h>
 	<time.h>
@@ -142,10 +143,13 @@
 	<fstream>
 	<windowsx.h>
 	<pthread.h>
-	<CClock.h>
 	<string>
 	"vmath.hpp"
 	"res.h"
+	<CClock.h>
+	<Translator.h>
+	<MultiEnString.h>
+	<spdlog.h>
 
 1687004437 c:\users\yd\desktop\mineterraria\#innerprojs\aaaa0ggmclib\headers\cclock.h
 	<windows.h>
@@ -158,4 +162,21 @@
 	<tgmath.h>
 	<fstream>
 	<ctype.h>
+
+1685864176 c:\users\yd\desktop\mineterraria\#innerprojs\aaaa0ggmclib\headers\translator.h
+	<string>
+	<vector>
+	<unordered_map>
+	<MultiEnString.h>
+	<stdarg.h>
+
+1682731036 c:\users\yd\desktop\mineterraria\#innerprojs\aaaa0ggmclib\headers\multienstring.h
+	<string>
+
+1685857531 c:\users\yd\desktop\mineterraria\#innerprojs\aaaa0ggmclib\headers\spdlog.h
+	<memory>
+	<string>
+	<windows.h>
+	<fstream>
+	<CClock.h>
 

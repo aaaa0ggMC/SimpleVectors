@@ -1,7 +1,0 @@
-VECTOR(V)标记不符合语法![标记:v][子标记:(]
-Main token doesn't match the grammar.[Token:t0]
-Main token doesn't match the grammar.[Token:f]
-Main token doesn't match the grammar.[Token:x10]
-Main token doesn't match the grammar.[Token:y8]
-Main token doesn't match the grammar.[Token:r180]
-Note:也许是注释标记后面没加上空格，试试看吧！(美有姬^_^)Main token doesn't match the grammar.[Token:t0]

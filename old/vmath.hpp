@@ -5,6 +5,7 @@
 #include <vector>
 #include <stdio.h>
 #include <string>
+#include <tgmath.h>
 #include <fstream>
 #include <ctype.h>
 
@@ -77,9 +78,6 @@ vector<Vector> readVectors(string fname,int & err,float & px,float & py,
     errors = "";
     ifs.open(fname);
     if(!ifs.good()){
-        errors += "无法读取文件";
-        errors += fname;
-        errors += "!\n";
         err = -1;///Can't open file correctly.
         return {};
     }
@@ -160,7 +158,7 @@ vector<Vector> readVectors(string fname,int & err,float & px,float & py,
         }
     }
     ifs.close();
-    err = tokens;
+    err = 0;
     return vecs;
 }
 

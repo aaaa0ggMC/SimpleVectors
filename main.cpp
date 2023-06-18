@@ -1,678 +1,396 @@
-#include <windows.h>
-#include <math.h>
-#include <cmath>
-#include <vector>
-#include <stdio.h>
-#include <time.h>
-#include <gl/gl.h>
-#include <gL/glext.h>
-#include <gL/glu.h>
-#include <stdlib.h>
-#include <iostream>
-#include <fstream>
-#include <windowsx.h>
-#include <pthread.h>
+///Structure:DW-2
+#define private public
+//Base C++ Libraries
 #include <string>
-#include "vmath.hpp"
-#include "res.h"
+#include <iostream>
+#include <cmath>
+#include <fstream>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <atomic>
+#include <thread>
+#include <ctime>
+#include <vector>
 
+//Windows Libraries
+#include <windows.h>
+#include <windowsx.h>
+
+//OpenGL Libraries
+#include <GL/gl.h>
+
+//aaaa0ggmc Libraries
 #include <CClock.h>
 #include <Translator.h>
 #include <MultiEnString.h>
 #include <spdlog.h>
 
-#define Block(X)
-#define STOP_PLAY_BTN 1234
-#define HIDE_SHOW_LINES 1235
-#define HIDE_SHOW_CRICLES 1236
-#define SLP_TIME 20
-#define PerSpec 100
-#define STORE_DATA 1237
-#define REPAINT_PAGE 1238
-#define MENU(X) ((HMENU)(X))
-#define RELOAD_PAGE 1239
-#define OPEN_LOADED_FILE 1240
-#define OPEN_HELP_PAGE 1241
-#define GetLimMs ((DWORD)(1000/(FRAME_LIMIT)))
+//Resources
+#include "rc.h"
+
+#include "vmath.hpp"
+
+#define DATA_CONFIG "data/config.cfg"
+#define DATA_PATH "data/"
 
 using namespace std;
 using namespace cck;
 using namespace alib;
 
-LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
-void EnableOpenGL(HWND hwnd, HDC*, HGLRC*);
-void DisableOpenGL(HWND, HDC, HGLRC);
-void * UpdatingPainting(void *);
-void * FlushScreen(void *);
-void PreInit();
+struct GConfig{
+    int err;
+    float part_x;
+    float part_y;
+    float run_speed;
+    int frame_limit;
+    int vertices_limit;
+    float scale_speed;
+    float move_speed;
+    float storing_limi;
+    GConfig(){
+        err = 0;
+        part_x = part_y = 40;
+        run_speed = 10;
+        frame_limit = -1;
+        vertices_limit = 256;
+        scale_speed = 0.01;
+        move_speed = 1;
+        storing_limi = 2;
+    }
+};
 
-int floating_scaling = 1;
-bool nextFrame = false;
-string ssStr = "";
-bool flushing = true;
-int calFPSFr = 15,FRAME_LIMIT = 1000,MXP = 1024,err = 0;
+
+void FlashScreen();
+void HelpPage(const char * lanId);
+LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
+void EnableOpenGL(HWND hwnd, HDC* hDC, HGLRC* hRC);
+void DisableOpenGL (HWND hwnd, HDC hDC, HGLRC hRC);
+void Display();
+void UpdatingPainting();
+void SetMenuText(HMENU menu,int command,LPSTR str);
+int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t,int LineSpace,TEXTMETRIC&);
+
+///Logs//
+LogSaver logSaver;
+LogFactory l("FT",false,&logSaver);
+
+//Communication between flash program & main
+string tr_CommS = "";
+atomic<int> tr_Progess = 0;
+
+///Translations///
+Translator ts;
+
+GConfig gc;
+
+bool criticalFlag = false;
+bool errorFlag = false;
+
+vector<Vector> points,point1;
+
+//Windows
+///main window-OpenGL runs here
+HWND hwnd;
+///sub window,controls
+HWND subHWND;
+
+const char * opener = "fft.math";
+
+const ULONG_PTR mRepaint = 1,mCircles = 2,mReload = 3,mStore = 4,mOpenFileP = 5,mLines = 6,mPlay = 7,mNextFrame = 8;
+
+bool stop = false;
 bool calstop = false;
-float partx = 10,party = 10,opx,opy,speed = 1,scaleSpeed = 0.05,mvSp = 0.1;
-float pxmpx,pympy;///pos.x / part.x && pos.y / part.y///
-float scales = 1;
-bool stop = false,showLines = true,showCircles = false;
-float fenv = -1;
-int store_status = 0;
+bool showCircles = false;
+bool showLines = true;
+bool nextFrame = false;
+
+//下一帧时间增幅倍数
+unsigned int floating_scaling = 1;
+
+char * outputbuf = NULL;
+
+DWORD timeDL = 0;
+
 bool rderr = false;
 
-Translator ts;
-LogSaver saver;
-LogFactory l("FFT",true);
+HMENU menu = CreateMenu();
+HDC subDC;
+HDC hDC;
+HDC hsubDC = NULL;
 
+HBITMAP bmp = NULL;
 
-HWND subHWND = NULL,btn_tg = NULL,btn_tghd = NULL,btn_tgcr = NULL,btn_storeData = NULL,btn_rp = NULL,btn_rl = NULL,btn_of = NULL;
-HWND go4help = NULL;
-HDC subDC = NULL;
-DWORD timeDL = 0;
+HBRUSH blkBrush = (HBRUSH)GetStockObject(BLACK_BRUSH);
 BOOL bQuit = FALSE;
+HGLRC hRC;
 
-vector<Vector> point0,point1;
-string errs = "";
-Clock clocks(false);
-Vector pos = {0,0};
+TEXTMETRIC metric;
 
-int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow){
+atomic<float> elapseTime;
+Clock loffset(false),fpsClk(false),clocks(false);
 
-    PreInit();
-    saver.SetFileOutput(TRANSLATE_PATH "/log.txt");
+unsigned int frameGoes = 0;
 
-    int preFrameC = 0,frameGoes = 0,mxFrame = 0;
-    float tx,ty;
+Vector pos = {0,0,0,0};
+Vector pdpart = {0,0,0,0};
 
+int preFrameC = 0;
+int mxFrame = 0;
+
+#define MAX_INFO_SIZE 1024
+#define MAX_INFO_SIZE_S "1024"
+int main(int argc,char * argv[]){
     WNDCLASSEX wcex;
-    HWND hwnd;
-    HDC hDC;
-    HGLRC hRC;
-    HBRUSH blkBrush = (HBRUSH)GetStockObject(BLACK_BRUSH);
     MSG msg;
-    pthread_t dt = 0;
 
-    Clock fpsClk(false);
+    outputbuf = new char[MAX_INFO_SIZE];
+    ZeroMemory(outputbuf,sizeof(char) * MAX_INFO_SIZE);
 
-    ssStr = "开始读取向量数据.";
-    l.info(ssStr);
-
-    point0 = readVectors("fft.math",err,partx,party,speed,MXP,FRAME_LIMIT,scaleSpeed,mvSp,fenv,ssStr);
-
-    fenv = (int)fenv;
-
-    if(err){
-        flushing = false;
-        Sleep(30);
-        MessageBox(NULL,"读取fft.math错误","Error",MB_TOPMOST | MB_ICONERROR | MB_OK);
-        exit(EXIT_FAILURE);
+    //Init LogSavers
+    logSaver.SetFileOutput("data/log.txt");
+    //Flash Window
+    {
+        thread tr(FlashScreen);
+        tr.detach();
     }
-
-    ssStr = "读取成功";
-
-    errs = GetErrors();
-    opx = partx;
-    opy = party;
-
-    ssStr = "注册class.";
-
-    Block(WCEX){
+    l.info("Loading Kernels...");
+    //Load Translates
+    atexit([]{
+        ofstream ofs(DATA_CONFIG);
+        if(ofs.bad())return;
+        ofs << ts.Translate(ACCESS_TOKEN,"en_us").GetUTF8() << " " << logSaver.showlg;
+        ofs.close();
+        if(criticalFlag){
+            MessageBox(NULL,"程序发生过致命错误！请查看data/log.txt检查错误！","CriticalErrors",MB_OK | MB_ICONERROR | MB_TOPMOST);
+        }else if(errorFlag){
+            MessageBox(NULL,"程序发生过错误！可查看data/log.txt检查错误！","Errors",MB_OK | MB_ICONEXCLAMATION | MB_TOPMOST);
+        }
+        ///释放绘制时创建的资源
+        if(bmp)DeleteBitmap(bmp);
+        if(hsubDC)DeleteDC(hsubDC);
+        delete [] outputbuf;
+    });
+    ts.LoadTranslateFiles(DATA_PATH);
+    {
+        //read statuses
+        ifstream ifs(DATA_CONFIG);
+        if(!ifs.bad()){
+            string s = "";
+            int flag = 0;
+            ifs >> s >> flag;
+            if(flag == 0){
+                flag = LOG_RELE;
+            }
+            ifs.close();
+            ts.LoadTranslate(s);
+            logSaver.showLogs(flag);
+        }else{
+            l.error("Cannot load configuration  \"" DATA_CONFIG "\",but it does little harm.");
+            errorFlag = true;
+        }
+    }
+    tr_Progess = 40;
+    {
+        if(argc < 2){
+            l.info("Given no arguments,we choose \"fft.math\" as a default file to load.");
+        }else if(!strcmp(argv[2],"-help") || !strcmp(argv[2],"-h") || !strcmp(argv[2],"-?") || !strcmp(argv[2],"?")){
+            HelpPage(ts.Translate(ACCESS_TOKEN,"en_us").GetUTF8().c_str());
+        }else{
+            opener = argv[2];
+        }
+        l.info("Loading Vectors...");
+        points = readVectors(opener,gc.err,gc.part_x,gc.part_y,gc.run_speed,gc.vertices_limit,gc.frame_limit,gc.scale_speed,gc.move_speed,gc.storing_limi,tr_CommS);
+        if(gc.err < 0){
+            l.critical(errors);
+            criticalFlag = true;
+        }else {
+            if(errors.compare("")){
+                rderr = true;
+                errors = string("无法正常加载文件，因为:\n") + errors;
+                l.warn(errors);
+            }
+            string sx = "Loaded ";
+            sx += to_string(gc.err);
+            sx += " vectors in total.";
+            l.info(sx);
+        }
+    }
+    tr_Progess = 90;
+    tr_CommS = "注册窗口,运行OpenGL...";
+    {
         wcex.cbSize = sizeof(WNDCLASSEX);
         wcex.style = CS_OWNDC;
         wcex.lpfnWndProc = WindowProc;
         wcex.cbClsExtra = 0;
         wcex.cbWndExtra = 0;
-        wcex.hInstance = hInstance;
+        wcex.hInstance = NULL;
         wcex.hIcon = LoadIcon(NULL, IDI_APPLICATION);
         wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
         wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
         wcex.lpszMenuName = NULL;
-        wcex.lpszClassName = "FFT";
+        wcex.lpszClassName = "FT";
         wcex.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
-    }
 
-    if (!RegisterClassEx(&wcex)){
-        flushing = false;
-        Sleep(30);
-        MessageBox(NULL,"无法注册class","Error",MB_TOPMOST | MB_ICONERROR | MB_OK);
-        return 0;
-    }
+        if (!RegisterClassEx(&wcex)){
+            tr_Progess = 100;
+            l.critical("Failed to register class!Try to reload this application may help!");
+            criticalFlag = true;
+            exit(-1);
+        }
 
-    ssStr = "初始化窗口.";
+        //Loading menus
+        HMENU controls = CreatePopupMenu();
+        HMENU view = CreatePopupMenu();
+        HMENU stores = CreatePopupMenu();
 
-    Block(InitWindowComponets){
-        hwnd = CreateWindowEx(0,"FFT","Look For FFT",WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
-                              600,600,NULL,NULL,hInstance,NULL);
-        subHWND = CreateWindowEx(0,"FFT","FFT's console",WS_CAPTION | WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
-                              424,424,hwnd,NULL,hInstance,NULL);
-        btn_tg = CreateWindowEx(0,"BUTTON","Stop",WS_CHILD | WS_VISIBLE,184,316,
-                              40,30,subHWND,MENU(STOP_PLAY_BTN),hInstance,NULL);
-        btn_tghd = CreateWindowEx(0,
-                              "BUTTON","HL",WS_CHILD | WS_VISIBLE,108,316,
-                              40,30,subHWND,MENU(HIDE_SHOW_LINES),hInstance,NULL);
-        btn_tgcr = CreateWindowEx(0,"BUTTON","SC",WS_CHILD | WS_VISIBLE,256,316,
-                              40,30,subHWND,MENU(HIDE_SHOW_CRICLES),hInstance,NULL);
-        btn_storeData = CreateWindowEx(0,"BUTTON","SD",WS_CHILD | WS_VISIBLE,360,5,
-                              40,30,subHWND,MENU(STORE_DATA),hInstance,NULL);
-        btn_storeData = CreateWindowEx(0,"BUTTON","RP",WS_CHILD | WS_VISIBLE,360,40,
-                              40,30,subHWND,MENU(REPAINT_PAGE),hInstance,NULL);
-        btn_rl = CreateWindowEx(0,"BUTTON","RL",WS_CHILD | WS_VISIBLE,360,75,
-                              40,30,subHWND,MENU(RELOAD_PAGE),hInstance,NULL);
-        btn_of = CreateWindowEx(0,"BUTTON","OF",WS_CHILD | WS_VISIBLE,360,105,
-                              40,30,subHWND,MENU(OPEN_LOADED_FILE),hInstance,NULL);
+        AppendMenu(menu,MF_POPUP,(UINT_PTR)controls,"控制");
+        AppendMenu(menu,MF_POPUP,(UINT_PTR)view,"显示");
+        AppendMenu(menu,MF_POPUP,(UINT_PTR)stores,"存储");
 
-        go4help = CreateWindowEx(0,"BUTTON","HP",WS_CHILD | WS_VISIBLE,360,140,
-                              40,30,subHWND,MENU(OPEN_HELP_PAGE),hInstance,NULL);
+        //views
+        AppendMenu(view,MF_CHECKED,mLines,"显示线段(Ctrl+L)");
+        AppendMenu(view,MF_CHECKED,mCircles,"显示圆圈(Ctrl+O)");
 
-        flushing = false;
+        //controls
+        AppendMenu(controls,MF_STRING,mPlay,"停止(Ctrl+P)");
+        AppendMenu(controls,MF_STRING,mNextFrame,"下一帧(Ctrl+N)");
+        AppendMenu(controls,MF_SEPARATOR,0,0);
+        AppendMenu(controls,MF_STRING,mRepaint,"重绘(Ctrl+Q)");
+        AppendMenu(controls,MF_STRING,mRepaint,"重新加载(Ctrl+W)");
 
-        ShowWindow(hwnd, nCmdShow);
-        ShowWindow(subHWND,nCmdShow);
+        //stores
+        AppendMenu(stores,MF_STRING,mOpenFileP,"打开文件(Ctrl+O)");
+        AppendMenu(stores,MF_STRING,mStore,"存储数据(Ctrl+S)");
+
+
+        CheckMenuItem(menu,mCircles,MF_UNCHECKED);
+
+        hwnd = CreateWindowEx(0,"FT","Look For FT",WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
+                              600,600,NULL,NULL,NULL,NULL);
+        subHWND = CreateWindowEx(0,"FT","FT's console",WS_CAPTION | WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
+                              424,424,hwnd,menu,NULL,NULL);
+
+        ShowWindow(hwnd,SW_SHOW);
+        ShowWindow(subHWND,SW_SHOW);
     }
 
     subDC = GetDC(subHWND);
+    ///创建双缓冲DC
+    hsubDC = CreateCompatibleDC(subDC);
+    bmp = CreateCompatibleBitmap(subDC,424,424);
+    ///获取DC字体数据（未更新字体前）
+    GetTextMetrics(hsubDC,&metric);
+    ///启动线程
+    thread updates(UpdatingPainting);
+    thread paint(Display);
 
-    EnableOpenGL(hwnd, &hDC, &hRC);
-
-    //The calculating must run before catch events,or window will be paint in very bad///
-    ///nope,the calculating process must run in multiple threads
-    pthread_create(&dt,NULL,UpdatingPainting,NULL);
-    pthread_detach(dt);
-    if(errs.compare("")){
-        rderr = true;
-        ofstream ofs;
-        ofs.open("fft.error");
-        if(!ofs.good()){
-            MessageBox(NULL,"无法写错误信息入fft.error中","Error",MB_TOPMOST | MB_ICONERROR | MB_OK);
-            exit(2);
-        }
-        ofs << errs;
-        ofs.close();
-    }
-
-    clocks.Start();
+    loffset.Start();
     fpsClk.Start();
+    clocks.Start();
 
-    while (!bQuit)
-    {
+    tr_Progess = 100;
+    while (!bQuit){
         /* check for messages */
-        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-        {
+        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)){
             /* handle or dispatch messages */
-            if (msg.message == WM_QUIT)
-            {
-                pthread_cancel(dt);
+            if (msg.message == WM_QUIT){
                 bQuit = TRUE;
-            }
-            else
-            {
+            }else{
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
             }
         }
-        else
-        {
-            Block(OpenGL Drawing){
-                /* OpenGL animation code goes here */
-                //Update frame count
-                frameGoes++;
-
-                glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-                glClear(GL_COLOR_BUFFER_BIT);
-
-                glPushMatrix();
-                //glRotatef(theta, 0.0f, 0.0f, 1.0f);
-
-                glColor3f(1.0,1.0,1.0);
-                glBegin(GL_LINES);
-                    //Draw the line
-                    glVertex2f(pxmpx,-1);
-                    glVertex2f(pxmpx,1);
-                    glVertex2f(-1,pympy);
-                    glVertex2f(1,pympy);
-                    //Draw the vectors trail
-                    Vector def = {0,0,0,0};
-                    def.x = pos.x;
-                    def.y = pos.y;
-
-                    if(showCircles){
-                        glColor3f(0.5f,0.5f,0.5f);
-                        float tLen = 0;
-                        for(unsigned int i = 0;i < point0.size();i++){
-                            tLen = point0[i].Length();
-                            glVertex2f((def.x+ tLen) /partx,def.y / party);
-                            for(unsigned int p = 0;p < (unsigned int)(PerSpec * tLen /2);p++){
-                                tx = (tLen * cos(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.x) / partx;
-                                ty = (tLen * sin(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.y) / party;
-                                glVertex2f(tx,ty);
-                                glVertex2f(tx,ty);
-                            }
-                            glVertex2f((def.x + tLen) / partx,def.y / party);
-                            def.x += point0[i].x;
-                            def.y += point0[i].y;
-                        }
-                    }
-                    //Draw the vectors
-                    glColor3f(1.0,1.0,0.0);
-                    def = {0,0,0,0};//temp = {0,0,0,0};
-                    def.x = pos.x;
-                    def.y = pos.y;
-                    glVertex2f(def.x / partx,def.y / party);
-                    for(unsigned int i = 0;i < point0.size();i++){
-                        def.x += point0[i].x;
-                        def.y += point0[i].y;
-                        glVertex2f(def.x / partx,def.y / party);
-                        glVertex2f(def.x / partx,def.y / party);
-
-                    }
-
-                    glVertex2f(def.x / partx,def.y / party);
-                    //Draw the main texture
-                    glColor3f(1.0,1.0,1.0);
-                    if(showLines){
-                        string stored = "";
-                        bool store = false;
-                        if(store_status == 3){
-                            store_status = 1;
-                            store = true;
-                        }
-                        if(store){
-                            if(fenv <= 0){
-                                stored += "(" + to_string(point1[0].x) + "," + to_string(point1[0].y) + ")\n";
-                            }else{
-                                string fmtStr = string("(%.") + to_string((int)fenv) +
-                                 string("f,%.") + to_string((int)fenv) + string("f)\n");
-                                char * strfmtbuf = (char *)malloc(sizeof(char) * 1024);
-                                ZeroMemory(strfmtbuf,sizeof(char) * 1024);
-                                sprintf(strfmtbuf,fmtStr.c_str(),point1[0].x,point1[0].y);
-                                stored += strfmtbuf;
-                            }
-                        }
-                        glVertex2f(point1[0].x/partx + pxmpx,point1[0].y/party + pympy);
-                        for(unsigned int i = 0;i < point1.size();i++){
-                            tx = point1[i].x / partx + pxmpx;
-                            ty = point1[i].y / party + pympy;
-                            if(store){
-                                if(fenv <= 0){
-                                    stored += "(" + to_string(point1[i].x) + "," + to_string(point1[i].y) + ")\n";
-                                }else{
-                                    string fmtStr = string("(%.") + to_string((int)fenv) +
-                                    string("f,%.") + to_string((int)fenv) + string("f)\n");
-                                    char * strfmtbuf = (char *)malloc(sizeof(char) * 1024);
-                                    ZeroMemory(strfmtbuf,sizeof(char) * 1024);
-                                    sprintf(strfmtbuf,fmtStr.c_str(),point1[i].x,point1[i].y);
-                                    stored += strfmtbuf;
-                                }
-                            }
-                            glVertex2f(tx,ty);
-                            glVertex2f(tx,ty);
-                        }
-                        ///Do processing
-                        if(store){
-                            ofstream ofs0;
-                            ofs0.open("fft.sd");
-                            if(ofs0.good()){
-                                try{
-                                    ofs0 << stored;
-                                    ofs0.close();
-                                }catch(std::exception *){
-                                    store_status = 2;
-                                }
-                            }else{
-                                store_status = 2;
-                            }
-                        }
-                    }
-                    //Draw Our Moving Line
-                    glVertex2f(pxmpx,pympy);
-                    glVertex2f(point1[point1.size()-1].x / partx + pxmpx,point1[point1.size()-1].y / party + pympy);
-                glEnd();
-
-                glPopMatrix();
-                SwapBuffers(hDC);
-                ///Draw To Console
-                HDC hsubDC = CreateCompatibleDC(subDC);
-                HBITMAP bmp = CreateCompatibleBitmap(subDC,424,424);
-                SelectBitmap(hsubDC,bmp);
-                int xt = 5;
-                string str = "fps:";
-                SetBkColor(hsubDC,RGB(0,0,0));
-                SetTextColor(hsubDC,RGB(255,255,255));
-                SelectBrush(hsubDC,blkBrush);
-                Rectangle(hsubDC,0,0,424,424);
-                if(frameGoes >= calFPSFr){
-                    int off = 0;
-                    off = fpsClk.GetOffset();
-                    if(off != 0){
-                        preFrameC = (int)(1000 / off) * frameGoes;
-                        if(preFrameC > mxFrame){
-                            mxFrame = preFrameC;
-                        }
-                    }
-                    frameGoes = 0;
-                }
-                SetBkMode(hsubDC,TRANSPARENT);
-                SetTextColor(hsubDC,RGB(255,255,255));
-                str += to_string(preFrameC);
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "目前最高的fps:" + to_string(mxFrame);
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "现在的时间:" + to_string(clocks.GetALLTime()+timeDL) + "ms/" + to_string(((float)(clocks.GetALLTime() + timeDL) /(float)1000)) + "s";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "点的坐标:[" + to_string(point1[point1.size()-1].x) + "," + to_string(point1[point1.size()-1].y) + "]";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "向量数量:" + to_string(point0.size());
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "点的数量:" + to_string(point1.size());
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                if(rderr){
-                    str = "错误被存储在了 [fft.error].";
-                    TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                    xt += 20;
-                }
-                str = "PS:SL代表显示出点围成的图案,HL反之.:=)";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "PS:SC代表显示出向量的旋转圆圈,HC反之.:=)";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "PS:SD:存储这一轮的点数据 RP:重画 RL:重新加载";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                str = "PS:按'+','-'缩放,wasd(或 ↑ ← ↓ →)移动 ,esc退出.";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 20;
-                if(!store_status){
-                    str = "还没存数据呢！";
-                }else if(store_status == 1){
-                    str = "数据存储在了[fff.sd].";
-                }else if(store_status == 2){
-                    str = "数据存储失败！";
-                }
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                xt += 40;
-                str = "aaaa0ggmc(RockonDreaming) 制作";
-                TextOut(hsubDC,5,xt,str.c_str(),str.length());
-                BitBlt(subDC,0,0,424,424,hsubDC,0,0,SRCCOPY);
-                DeleteDC(hsubDC);
-                DeleteBitmap(bmp);
-                if(nextFrame){
-                    nextFrame = !nextFrame;
-                    if(!clocks.isStop())timeDL += clocks.Stop().all;
-                    else timeDL += 10 * floating_scaling;
-                    SetWindowText(btn_tg,"Play");
-                    stop = true;
-                }
-                if(GetLimMs){//If GetLimMs not eqauls 0,then we sleep,else we do nothing
-                    Sleep(GetLimMs);
-                    ///Why do this
-                    ///Cause in windows Sleep(0) means you throw the rest of the calculating time///
-                    ///So don't sleep can cause more fps///
-                }
-            }
-        }
     }
 
-    /* shutdown OpenGL */
-    DisableOpenGL(hwnd, hDC, hRC);
-
-    /* destroy the window explicitly */
     DestroyWindow(hwnd);
-
-    ///保存数据
-    ofstream ofs(CONFIG_PATH);
-    if(!ofs.bad()){
-        ofs << ts.Translate(VERIFY_TOKEN,"en_us").GetUTF8();
-    }
-    ofs.close();
-
-    return msg.wParam;
+    return 0;
 }
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-    WORD wmId;
-    switch (uMsg)
-    {
-        case WM_CLOSE:
-            PostQuitMessage(0);
-        break;
-        case WM_COMMAND:
-            wmId = LOWORD(wParam);
-            switch(wmId){
-            case STOP_PLAY_BTN:
-                if(stop){
-                    clocks.Start();
-                    SetWindowText(btn_tg,"Stop");
-                }else{
-                    timeDL += clocks.Stop().all;
-                    SetWindowText(btn_tg,"Play");
-                }
-                stop = !stop;
-                break;
-            case OPEN_LOADED_FILE:
-                system("start fft.math");
-                break;
-            case OPEN_HELP_PAGE:
-                system("start data\\help.html");
-                break;
-            case HIDE_SHOW_LINES:
-                showLines = !showLines;
-                if(showLines){
-                    SetWindowText(btn_tghd,"HL");
-                }else{
-                    SetWindowText(btn_tghd,"SL");
-                }
-                break;
-            case HIDE_SHOW_CRICLES:
-                showCircles = !showCircles;
-                if(showCircles){
-                    SetWindowText(btn_tgcr,"HC");
-                }else{
-                    SetWindowText(btn_tgcr,"SC");
-                }
-                break;
-            case STORE_DATA:
-                store_status = 3;//Storing
-                break;
-            case REPAINT_PAGE:
-                calstop = true;
-                point1.clear();
-                for(unsigned int xt0 = 0;xt0 < point0.size();xt0++){
-                    point0[xt0].rotation = RadToDeg(point0[xt0].orot);
-                }
-                calstop = false;
-                break;
-            case RELOAD_PAGE:
-                calstop = true;
-                rderr = false;
-                point0.clear();
-                point1.clear();
-                point0 = readVectors("fft.math",err,partx,party,speed,MXP,FRAME_LIMIT,scaleSpeed,mvSp,fenv,ssStr);
-                if(err){
-                    MessageBox(NULL,"读取fft.math错误","Error",MB_TOPMOST | MB_ICONERROR | MB_OK);
-                    exit(EXIT_FAILURE);
-                }
-                errs = GetErrors();
-                opx = partx;
-                opy = party;
-                if(errs.compare("")){
-                    rderr = true;
-                    ofstream ofs;
-                    ofs.open("fft.error");
-                    if(!ofs.good()){
-                        MessageBox(NULL,"无法写错误信息入fft.error中","Error",MB_TOPMOST | MB_ICONERROR | MB_OK);
-                        exit(2);
-                    }
-                    ofs << errs;
-                    ofs.close();
-                }
-                partx *= scales;
-                party *= scales;
-                clocks.Stop();
-                clocks.Start();
-                calstop = false;
-                break;
-            default:
-                break;
-            }
-            SetFocus(subHWND);
-        case WM_DESTROY:
-            return 0;
-        case WM_KEYDOWN:
-        {
-            switch (wParam)
-            {
-                case '1':
-                    floating_scaling = 1;
-                    break;
-                case '2':
-                    floating_scaling = 2;
-                    break;
-                case '3':
-                    floating_scaling = 3;
-                    break;
-                case '4':
-                    floating_scaling = 4;
-                    break;
-                case '5':
-                    floating_scaling = 5;
-                    break;
-                case '6':
-                    floating_scaling = 6;
-                    break;
-                case '7':
-                    floating_scaling = 7;
-                    break;
-                case '8':
-                    floating_scaling = 8;
-                    break;
-                case '9':
-                    floating_scaling = 9;
-                    break;
-                case 'N':
-                    nextFrame = true;
-                    break;
-                case VK_SPACE:
-                   if(stop){
-                        clocks.Start();
-                        SetWindowText(btn_tg,"Stop");
-                    }else{
-                        timeDL += clocks.Stop().all;
-                        SetWindowText(btn_tg,"Play");
-                    }
-                    stop = !stop;
-                    break;
-                case VK_ESCAPE:
-                    PostQuitMessage(0);
-                    break;
-                case VK_ADD:
-                    ///use multiply else not be a round///
-                    scales -= scaleSpeed;
-                    if(scales <= 0)scales = 1;
-                    partx = opx * scales;
-                    party = opy * scales;
-                    break;
-                case VK_SUBTRACT:
-                    scales += scaleSpeed;
-                    if(scales <= 0)scales = 1;
-                    partx = opx * scales;
-                    party = opy * scales;
-                    break;
-                case VK_LEFT:
-                case VK_HOME:
-                    pos.x += mvSp;
-                    break;
-                case VK_UP:
-                    pos.y -= mvSp;
-                    break;
-                case VK_DOWN:
-                    pos.y += mvSp;
-                    break;
-                case VK_RIGHT:
-                case VK_END:
-                    pos.x -= mvSp;
-                    break;
-                case 229:
-                    switch(lParam){
-                        case 1074593793://long press
-                        case 851969://'+'
-                            scales -= scaleSpeed;
-                            if(scales <= 0)scales = 1;
-                            partx = opx * scales;
-                            party = opy * scales;
-                            break;
-                        case 1074528257:
-                        case 786433://'-'
-                            scales += scaleSpeed;
-                            if(scales <= 0)scales = 1;
-                            partx = opx * scales;
-                            party = opy * scales;
-                            break;
-                        case 1074855937://lp
-                        case 1114113://w
-                            pos.y -= mvSp;
-                            break;
-                        case 1075707905://lp
-                        case 1966081://a
-                            pos.x += mvSp;
-                            break;
-                        case 1075773441://lp
-                        case 2031617://s
-                            pos.y += mvSp;
-                            break;
-                        case 1075838977://lp
-                        case 2097153://d
-                            pos.x -= mvSp;
-                            break;
-                        default:
-                            break;
-                    }
-                    break;
-                case 187:
-                    scales -= scaleSpeed;
-                    if(scales <= 0)scales = 1;
-                    partx = opx * scales;
-                    party = opy * scales;
-                    break;
-                case 189:
-                    scales += scaleSpeed;
-                    if(scales <= 0)scales = 1;
-                    partx = opx * scales;
-                    party = opy * scales;
-                    break;
-                case 87://w
-                    pos.y -= mvSp;
-                    break;
-                case 65://a
-                    pos.x += mvSp;
-                    break;
-                case 83://s
-                    pos.y += mvSp;
-                    break;
-                case 68://d
-                    pos.x -= mvSp;
-                    break;
-            }
-            pxmpx = pos.x / partx;
-            pympy = pos.y / party;
+void HelpPage(const char * s){
+    string composed = DATA_PATH "help_";
+    composed += s;
+    composed += ".html";
+    ifstream ifs(composed);
+    if(ifs.bad()){
+        l.critical("Failed to open help page!!");
+        criticalFlag = true;
+    }else{
+        string data = "\n";
+        while(!ifs.eof()){
+            getline(ifs,composed);
+            data += composed;
+            data += "\n";
         }
+        l.info(data);
+        ifs.close();
+    }
+}
+
+#define SLP_TIME 20
+void FlashScreen(){
+    HICON ico = LoadIcon(GetModuleHandle(NULL),MAKEINTRESOURCE(MAIN_ICON));
+    DWORD w = 0,h = 0;
+    DWORD x = 0,y = 0;
+    HDC desktopDC = GetDC(NULL);
+    HWND desktopWindow = WindowFromDC(desktopDC);
+    RECT desktopRect = {0,0,0,0};
+    Clock clk_time;
+    Clock updatePos;
+
+    GetWindowRect(desktopWindow,&desktopRect);
+    h = (desktopRect.bottom - desktopRect.top) / 5 * 3;
+    w = h;
+    x = ((desktopRect.right - desktopRect.left) - w)/2;
+    y = ((desktopRect.bottom - desktopRect.top) - h)/2;
+    bool ans = true;
+    char * paintStr = (char *)malloc(sizeof(char) * 64);
+    SetBkColor(desktopDC,RGB(0,0,0));
+    SetTextColor(desktopDC,RGB(255,255,255));
+    while(tr_Progess < 100){
+        if(updatePos.Now().offset > 1000){
+            updatePos.GetOffset();
+            GetWindowRect(desktopWindow,&desktopRect);
+            h = (desktopRect.bottom - desktopRect.top) / 5 * 3;
+            w = h;
+            x = ((desktopRect.right - desktopRect.left) - w)/2;
+            y = ((desktopRect.bottom - desktopRect.top) - h)/2;
+        }
+        if(clk_time.GetALLTime() > 16000 && ans){
+            int an = MessageBox(NULL,"向量似乎有点多是否退出","提示",MB_TOPMOST | MB_ICONQUESTION | MB_YESNO);
+            if(an == IDYES){
+                RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
+                exit(-1);
+            }else{
+                MessageBox(NULL,"可随时按下ESC退出！","提示",MB_TOPMOST | MB_OK);
+            }
+            ans = false;
+        }
+        if(GetAsyncKeyState(VK_ESCAPE) & 0x8000){
+            RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
+            exit(-1);
+        }
+        ZeroMemory(paintStr,sizeof(char) * 64);
+        sprintf(paintStr,"(%d/%d) %.36s",tr_Progess.load(),100,tr_CommS.c_str());
+        DrawIconEx(GetDC(NULL),x,y,ico,w,h,DI_NORMAL,NULL,DI_NORMAL);
+        TextOut(desktopDC,x+10,y+10,paintStr,32);
+        Sleep(SLP_TIME);
+    }
+    RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
+}
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
+    switch (uMsg){
+    case WM_CLOSE:
+        PostQuitMessage(0);
         break;
     default:
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
-
     return 0;
 }
 
-void EnableOpenGL(HWND hwnd, HDC* hDC, HGLRC* hRC)
-{
+void EnableOpenGL(HWND hwnd, HDC* hDC, HGLRC* hRC){
     PIXELFORMATDESCRIPTOR pfd;
 
     int iFormat;
@@ -702,109 +420,192 @@ void EnableOpenGL(HWND hwnd, HDC* hDC, HGLRC* hRC)
     wglMakeCurrent(*hDC, *hRC);
 }
 
-void DisableOpenGL (HWND hwnd, HDC hDC, HGLRC hRC)
-{
+void DisableOpenGL (HWND hwnd, HDC hDC, HGLRC hRC){
     wglMakeCurrent(NULL, NULL);
     wglDeleteContext(hRC);
     ReleaseDC(hwnd, hDC);
 }
 
-void * UpdatingPainting(void *){
+#define PerSpec 100
+#define calFPSFr 15
+void Display(){
+    EnableOpenGL(hwnd, &hDC, &hRC);
+    while(!bQuit){
+        float tx =0,ty = 0;
+        frameGoes++;
+
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glPushMatrix();
+        //glRotatef(theta, 0.0f, 0.0f, 1.0f);
+
+        glColor3f(1.0,1.0,1.0);
+        glBegin(GL_LINES);
+            //Draw the line
+            glVertex2f(pdpart.x,-1);
+            glVertex2f(pdpart.x,1);
+            glVertex2f(-1,pdpart.y);
+            glVertex2f(1,pdpart.y);
+            //Draw the vectors trail
+            Vector def = {0,0,0,0};
+            def.x = pos.x;
+            def.y = pos.y;
+
+            if(showCircles){
+                glColor3f(0.5f,0.5f,0.5f);
+                float tLen = 0;
+                for(unsigned int i = 0;i < points.size();i++){
+                    tLen = points[i].Length();
+                    glVertex2f((def.x+ tLen) / gc.part_x,def.y / gc.part_y);
+                    for(unsigned int p = 0;p < (unsigned int)(PerSpec * tLen /2);p++){
+                        tx = (tLen * cos(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.x) / gc.part_x;
+                        ty = (tLen * sin(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.y) / gc.part_y;
+                        glVertex2f(tx,ty);
+                        glVertex2f(tx,ty);
+                    }
+                    glVertex2f((def.x + tLen) / gc.part_x,def.y / gc.part_y);
+                    def.x += points[i].x;
+                    def.y += points[i].y;
+                }
+            }
+            //Draw the vectors
+            glColor3f(1.0,1.0,0.0);
+            def = {0,0,0,0};//temp = {0,0,0,0};
+            def.x = pos.x;
+            def.y = pos.y;
+            glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+            for(unsigned int i = 0;i < points.size();i++){
+                def.x += points[i].x;
+                def.y += points[i].y;
+                glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+                glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+
+            }
+
+            glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+            //Draw the main texture
+            glColor3f(1.0,1.0,1.0);
+            if(showLines){
+                glVertex2f(point1[0].x/ gc.part_x + pdpart.x,point1[0].y/ gc.part_y + pdpart.y);
+                for(unsigned int i = 0;i < point1.size();i++){
+                    tx = point1[i].x / gc.part_x + pdpart.x;
+                    ty = point1[i].y / gc.part_y + pdpart.y;
+                    glVertex2f(tx,ty);
+                    glVertex2f(tx,ty);
+                }
+            }
+            //Draw Our Moving Line
+            glVertex2f(pdpart.x,pdpart.y);
+            glVertex2f(point1[point1.size()-1].x / gc.part_x + pdpart.x,point1[point1.size()-1].y / gc.part_y + pdpart.y);
+        glEnd();
+
+        glPopMatrix();
+        SwapBuffers(hDC);
+        ///Draw To Console
+        SelectBitmap(hsubDC,bmp);
+        SetBkColor(hsubDC,RGB(0,0,0));
+        SetTextColor(hsubDC,RGB(255,255,255));
+        SelectBrush(hsubDC,blkBrush);
+        Rectangle(hsubDC,0,0,424,424);
+        if(frameGoes >= calFPSFr){
+            int off = 0;
+            off = fpsClk.GetOffset();
+            if(off != 0){
+                preFrameC = (int)(1000 / off) * frameGoes;
+                if(preFrameC > mxFrame){
+                    mxFrame = preFrameC;
+                }
+            }
+            frameGoes = 0;
+        }
+        SetBkMode(hsubDC,TRANSPARENT);
+        SetTextColor(hsubDC,RGB(0,255,255));
+
+        {
+            int sz = sprintf(outputbuf,
+                "fps:%d\n"
+                "目前最高fps:%d\n"
+                "现在的时间:%.2f ms = %.2f s\n"
+                "点的坐标:(%f,%f)\n"
+                "向量的数量:%d\n"
+                "点的数量:%d\n"
+                "\n%s%s",
+                preFrameC,mxFrame,clocks.GetALLTime()+timeDL,
+                (clocks.GetALLTime()+timeDL)/1000.0,
+                point1[point1.size()-1].x,point1[point1.size()-1].y,
+                points.size(),point1.size(),rderr?"错误被存储在了 data/log.txt 中\n":"",
+                "PS:命令行里输入 -help或者查看data/help_zh_cn.txt 来查看帮助 :=)\n");
+
+            MultiLineTextOut(hsubDC,5,32,outputbuf,sz,2,metric);
+
+            {
+                ///炫彩字体
+                static string author = "Created by aaaa0ggmc(RockonDreaming)";
+                static int uvalue = 0;
+                int stx = 5;
+                for(unsigned int idx = 0;idx < author.length();++idx){
+                    SetTextColor(hsubDC,RGB(abs(sin(uvalue) + cos(idx)) * 200 + 55,abs(cos(uvalue) - sin(idx)) * 200 + 55,abs(sin(idx))) * 200 + 55);
+                    TextOut(hsubDC,stx,5,&(author[idx]),1);
+                    stx += metric.tmAveCharWidth;
+                }
+                ++uvalue;
+            }
+        }
+        BitBlt(subDC,0,0,424,424,hsubDC,0,0,SRCCOPY);
+        if(nextFrame){
+            nextFrame = !nextFrame;
+            if(!clocks.isStop())timeDL += clocks.Stop().all;
+            else timeDL += 10 * floating_scaling;
+            ///TODO:Reset string
+            stop = true;
+        }
+        if(gc.frame_limit > 0){
+            Sleep(1000 / gc.frame_limit);
+        }
+        elapseTime = loffset.GetOffset();
+    }
+    DisableOpenGL(hwnd, hDC, hRC);
+}
+
+void UpdatingPainting(){
     while(!bQuit){
         ///calstop : stop multiple thread causes undefine behavior
         if((!stop && !calstop) || nextFrame){
             ///Calculating Painting Data
             Vector b = {0,0,0};
-            for(unsigned int i = 0;i < point0.size();i++){
+            for(unsigned int i = 0;i < points.size();i++){
                 //Read Infinite
                 //Multiply speed
-                if(point0[i].secperRound != RINFINITE)point0[i].Rotate(((double)(clocks.GetALLTime() + timeDL) * speed)/(double)1000);
-                b.x += point0[i].x;
-                b.y += point0[i].y;
+                if(points[i].secperRound != RINFINITE)points[i].Rotate(((double)(clocks.GetALLTime() + timeDL) * gc.run_speed)/(double)1000);
+                b.x += points[i].x;
+                b.y += points[i].y;
             }
             point1.push_back(b);
-            if(point1.size() > (unsigned int)(MXP))
+            if(point1.size() > (unsigned int)(gc.vertices_limit))
                 point1.erase(point1.begin());
         }
-        pthread_testcancel();
-        Sleep(GetLimMs + 4);
+        Sleep(1000 / gc.frame_limit + 4);
     }
-    return NULL;
 }
 
-void PreInit(){
-    pthread_t flushT = 0;
-    pthread_create(&flushT,NULL,FlushScreen,NULL);
-    pthread_detach(flushT);
-    ///加载翻译
-    ts.LoadTranslateFiles(TRANSLATE_PATH);
-    ///读取config
-    ifstream config(CONFIG_PATH);
-    if(!config.bad()){
-        string s = "";
-        config >> s;
-        ts.LoadTranslate(s);
-        config.close();
-    }else ts.LoadTranslate("en_us");
+void SetMenuText(HMENU m,int c,LPSTR d){
+    ModifyMenuA(m,c,MF_BYCOMMAND,c,d);
 }
 
-void * FlushScreen(void *){
-    HICON ico = LoadIcon(GetModuleHandle(NULL),MAKEINTRESOURCE(MAIN_ICON));
-    DWORD w = 0,h = 0;
-    DWORD x = 0,y = 0;
-    HDC desktopDC = GetDC(NULL);
-    HWND desktopWindow = WindowFromDC(desktopDC);
-    RECT desktopRect = {0,0,0,0};
-    Clock clk_time;
-    Clock updatePos;
-
-    GetWindowRect(desktopWindow,&desktopRect);
-
-    h = (desktopRect.bottom - desktopRect.top) / 5 * 3;
-    w = h;
-
-    x = ((desktopRect.right - desktopRect.left) - w)/2;
-    y = ((desktopRect.bottom - desktopRect.top) - h)/2;
-
-    bool ans = true;
-
-    char * paintStr = (char *)malloc(sizeof(char) * 24);
-
-    SetBkColor(desktopDC,RGB(0,0,0));
-
-    SetTextColor(desktopDC,RGB(255,255,255));
-
-    while(flushing){
-        if(updatePos.Now().offset > 1000){
-            updatePos.GetOffset();
-            GetWindowRect(desktopWindow,&desktopRect);
-            h = (desktopRect.bottom - desktopRect.top) / 5 * 3;
-            w = h;
-            x = ((desktopRect.right - desktopRect.left) - w)/2;
-            y = ((desktopRect.bottom - desktopRect.top) - h)/2;
+int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t Length,int LineSpace,TEXTMETRIC & Metric){
+    LineSpace += Metric.tmHeight;
+    int Lines = 0;
+    int Start = 0;
+    int i = 0;
+    for(;i < (int)Length; i++){
+        if(text[i] == '\n'){
+            Lines++;
+            TextOut(pDC,x,y,&(text[Start]),i-Start);
+            y += LineSpace;
+            Start = i + 1;
         }
-        if(clk_time.GetALLTime() > 16000 && ans){
-            int an = MessageBox(NULL,"向量似乎有点多是否退出","提示",MB_TOPMOST | MB_ICONQUESTION | MB_YESNO);
-            if(an == IDYES){
-                RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
-                exit(-1);
-            }else{
-                MessageBox(NULL,"可随时按下ESC退出！","提示",MB_TOPMOST | MB_OK);
-            }
-            ans = false;
-        }
-        if(GetAsyncKeyState(VK_ESCAPE) & 0x8000){
-            RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
-            exit(-1);
-        }
-        ZeroMemory(paintStr,sizeof(char) * 24);
-        sprintf(paintStr,"%.24s",ssStr.c_str());
-        DrawIconEx(GetDC(NULL),x,y,ico,w,h,DI_NORMAL,NULL,DI_NORMAL);
-        TextOut(desktopDC,x+10,y+10,paintStr,24);
-        Sleep(SLP_TIME);
     }
-
-    RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
-
-    return NULL;
+    TextOut(pDC,x,y,&(text[Start]),i-Start);
+    return Lines;
 }
