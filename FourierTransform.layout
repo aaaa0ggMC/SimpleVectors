@@ -4,18 +4,18 @@
 	<ActiveTarget name="Release" />
 	<File name="main.cpp" open="1" top="1" tabpos="1" split="0" active="1" splitpos="0" zoom_1="3" zoom_2="0">
 		<Cursor>
-			<Cursor1 position="2675" topLine="125" />
+			<Cursor1 position="10770" topLine="365" />
 		</Cursor>
 		<Folding>
-			<Collapse line="365" />
-			<Collapse line="554" />
-			<Collapse line="651" />
-			<Collapse line="669" />
+			<Collapse line="436" />
+			<Collapse line="635" />
+			<Collapse line="732" />
+			<Collapse line="750" />
 		</Folding>
 	</File>
 	<File name="vmath.hpp" open="1" top="0" tabpos="2" split="0" active="1" splitpos="0" zoom_1="3" zoom_2="0">
 		<Cursor>
-			<Cursor1 position="5092" topLine="173" />
+			<Cursor1 position="5092" topLine="167" />
 		</Cursor>
 	</File>
 </CodeBlocks_layout_file>

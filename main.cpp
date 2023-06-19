@@ -73,6 +73,7 @@ void UpdatingPainting();
 void SetMenuText(HMENU menu,int command,LPSTR str);
 int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t,int LineSpace,TEXTMETRIC&);
 void ConsoleDisplay();
+bool DealMenu(int id);
 
 ///Logs//
 LogSaver logSaver;
@@ -159,6 +160,9 @@ int mxFrame = 0;
 
 float opx = 0,opy = 0;
 
+
+void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu);
+
 #define MAX_INFO_SIZE 1024
 #define MAX_INFO_SIZE_S "1024"
 int main(int argc,char * argv[]){
@@ -181,6 +185,19 @@ int main(int argc,char * argv[]){
         ofstream ofs(DATA_CONFIG);
         if(ofs.bad())return;
         ofs << ts.Translate(ACCESS_TOKEN,"en_us").GetUTF8() << " " << logSaver.showlg;
+        ofs << " ";
+        ofs << (showLines?"1":"-1");
+        ofs << " ";
+        ofs << (showCircles?"1":"-1");
+        ofs << " ";
+        ofs << (discoord?"1":"-1");
+        ofs << " ";
+        ofs << (disvec?"1":"-1");
+        ofs << " ";
+        ofs << (disfvec?"1":"-1");
+        ofs << " ";
+        ofs << (chroma?"1":"-1");
+        ofs << " ";
         ofs.close();
         if(criticalFlag){
             MessageBox(NULL,"程序发生过致命错误！请查看data/log.txt检查错误！","CriticalErrors",MB_OK | MB_ICONERROR | MB_TOPMOST);
@@ -199,7 +216,40 @@ int main(int argc,char * argv[]){
         if(!ifs.bad()){
             string s = "";
             int flag = 0;
+            int vxd = 0;
             ifs >> s >> flag;
+            ifs >> vxd;
+            if(vxd){
+                showLines = (vxd+1)?true:false;
+                vxd = 0;
+            }
+            ifs >> vxd;
+            if(vxd){
+                showCircles = (vxd+1)?true:false;
+                vxd = 0;
+            }
+            ifs >> vxd;
+            if(vxd){
+                discoord = (vxd+1)?true:false;
+                vxd = 0;
+            }
+            ifs >> vxd;
+            if(vxd){
+                disvec = (vxd+1)?true:false;
+                vxd = 0;
+            }
+            ifs >> vxd;
+            if(vxd){
+                disfvec = (vxd+1)?true:false;
+                vxd = 0;
+            }
+            ifs >> vxd;
+            if(vxd){
+                chroma = (vxd+1)?true:false;
+                vxd = 0;
+            }
+
+
             if(flag == 0){
                 flag = LOG_RELE;
             }
@@ -271,12 +321,18 @@ int main(int argc,char * argv[]){
 
         //views
         AppendMenu(view,MF_CHECKED,mLines,"显示线段(Ctrl+L)");
+        ToggleCheckedMenu(mLines,showLines);
         AppendMenu(view,MF_CHECKED,mCircles,"显示圆圈(Ctrl+O)");
+        ToggleCheckedMenu(mCircles,showCircles);
         AppendMenu(view,MF_CHECKED,mDisCoord,"显示坐标系(Ctrl+C)");
+        ToggleCheckedMenu(mDisCoord,discoord);
         AppendMenu(view,MF_CHECKED,mDisVectors,"显示向量(Ctrl+V)");
+        ToggleCheckedMenu(mDisVectors,disvec);
         AppendMenu(view,MF_CHECKED,mDisFVec,"显示最终向量(Ctrl+F)");
+        ToggleCheckedMenu(mDisFVec,disfvec);
         AppendMenu(view,MF_SEPARATOR,0,0);
-        AppendMenu(view,MF_CHECKED,mChroma,"Chroma");
+        AppendMenu(view,MF_CHECKED,mChroma,"Chroma(Ctrl+M)");
+        ToggleCheckedMenu(mChroma,chroma);
 
         //controls
         AppendMenu(controls,MF_STRING,mPlay,"停止(Ctrl+P)");
@@ -288,9 +344,6 @@ int main(int argc,char * argv[]){
         //stores
         AppendMenu(stores,MF_STRING,mOpenFileP,"打开文件(Ctrl+O)");
         AppendMenu(stores,MF_STRING,mStore,"存储数据(Ctrl+S)");
-
-
-        CheckMenuItem(menu,mCircles,MF_UNCHECKED);
 
         hwnd = CreateWindowEx(0,"FT","Look For FT",WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
                               600,600,NULL,NULL,NULL,NULL);
@@ -317,7 +370,25 @@ int main(int argc,char * argv[]){
     clocks.Start();
 
     tr_Progess = 100;
+
+    Clock timer;
     while (!bQuit){
+        if(GetKeyState(VK_CONTROL) & 0x8000 && timer.Now().offset >= 200){
+            timer.GetOffset();
+            if(GetKeyState('L') & 0x8000){
+                DealMenu(mLines);
+            }else if(GetKeyState('O') & 0x8000){
+                DealMenu(mCircles);
+            }else if(GetKeyState('C') & 0x8000){
+                DealMenu(mDisCoord);
+            }else if(GetKeyState('V') & 0x8000){
+                DealMenu(mDisVectors);
+            }else if(GetKeyState('F') & 0x8000){
+                DealMenu(mDisFVec);
+            }else if(GetKeyState('M') & 0x8000){
+                DealMenu(mChroma);
+            }
+        }
         /* check for messages */
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)){
             /* handle or dispatch messages */
@@ -414,7 +485,7 @@ void FlashScreen(){
     RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
 }
 
-void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu){
+void ToggleCheckedMenu(int mi,bool stat,HMENU m){
     CheckMenuItem(m,mi,stat?MF_CHECKED:MF_UNCHECKED);
 }
 
@@ -460,6 +531,16 @@ bool DealMenu(int id){
             points[xt0].rotation = RadToDeg(points[xt0].orot);
         }
         calstop = false;
+        break;
+    case mOpenFileP:{
+        string command = "start notepad \"";
+        command += opener;
+        command += "\"";
+        system(command.c_str());
+        break;
+    }
+    case mStore:
+        MessageBox(NULL,"还没做","Error",MB_OK | MB_ICONERROR | MB_TOPMOST);
         break;
     case mReload:
         calstop = true;
