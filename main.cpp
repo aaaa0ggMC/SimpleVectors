@@ -48,6 +48,7 @@ struct GConfig{
     float scale_speed;
     float move_speed;
     float storing_limi;
+    float scales;
     GConfig(){
         err = 0;
         part_x = part_y = 40;
@@ -57,6 +58,7 @@ struct GConfig{
         scale_speed = 0.01;
         move_speed = 1;
         storing_limi = 2;
+        scales = 1;
     }
 };
 
@@ -70,6 +72,7 @@ void Display();
 void UpdatingPainting();
 void SetMenuText(HMENU menu,int command,LPSTR str);
 int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t,int LineSpace,TEXTMETRIC&);
+void ConsoleDisplay();
 
 ///Logs//
 LogSaver logSaver;
@@ -97,16 +100,32 @@ HWND subHWND;
 
 const char * opener = "fft.math";
 
-const ULONG_PTR mRepaint = 1,mCircles = 2,mReload = 3,mStore = 4,mOpenFileP = 5,mLines = 6,mPlay = 7,mNextFrame = 8;
+#define MENUITEM(X,V) const ULONG_PTR X = V
+MENUITEM(mRepaint,1);
+MENUITEM(mCircles,2);
+MENUITEM(mReload,3);
+MENUITEM(mStore,4);
+MENUITEM(mOpenFileP,5);
+MENUITEM(mLines,6);
+MENUITEM(mPlay,7);
+MENUITEM(mNextFrame,8);
+MENUITEM(mChroma,9);
+MENUITEM(mDisCoord,10);
+MENUITEM(mDisVectors,11);
+MENUITEM(mDisFVec,12);
 
 bool stop = false;
 bool calstop = false;
 bool showCircles = false;
 bool showLines = true;
 bool nextFrame = false;
+bool chroma = true;
+bool discoord = true;
+bool disvec = true;
+bool disfvec = true;
 
 //下一帧时间增幅倍数
-unsigned int floating_scaling = 1;
+unsigned int floating_scaling = 5;
 
 char * outputbuf = NULL;
 
@@ -137,6 +156,8 @@ Vector pdpart = {0,0,0,0};
 
 int preFrameC = 0;
 int mxFrame = 0;
+
+float opx = 0,opy = 0;
 
 #define MAX_INFO_SIZE 1024
 #define MAX_INFO_SIZE_S "1024"
@@ -251,13 +272,18 @@ int main(int argc,char * argv[]){
         //views
         AppendMenu(view,MF_CHECKED,mLines,"显示线段(Ctrl+L)");
         AppendMenu(view,MF_CHECKED,mCircles,"显示圆圈(Ctrl+O)");
+        AppendMenu(view,MF_CHECKED,mDisCoord,"显示坐标系(Ctrl+C)");
+        AppendMenu(view,MF_CHECKED,mDisVectors,"显示向量(Ctrl+V)");
+        AppendMenu(view,MF_CHECKED,mDisFVec,"显示最终向量(Ctrl+F)");
+        AppendMenu(view,MF_SEPARATOR,0,0);
+        AppendMenu(view,MF_CHECKED,mChroma,"Chroma");
 
         //controls
         AppendMenu(controls,MF_STRING,mPlay,"停止(Ctrl+P)");
         AppendMenu(controls,MF_STRING,mNextFrame,"下一帧(Ctrl+N)");
         AppendMenu(controls,MF_SEPARATOR,0,0);
         AppendMenu(controls,MF_STRING,mRepaint,"重绘(Ctrl+Q)");
-        AppendMenu(controls,MF_STRING,mRepaint,"重新加载(Ctrl+W)");
+        AppendMenu(controls,MF_STRING,mReload,"重新加载(Ctrl+W)");
 
         //stores
         AppendMenu(stores,MF_STRING,mOpenFileP,"打开文件(Ctrl+O)");
@@ -284,6 +310,7 @@ int main(int argc,char * argv[]){
     ///启动线程
     thread updates(UpdatingPainting);
     thread paint(Display);
+    thread console(ConsoleDisplay);
 
     loffset.Start();
     fpsClk.Start();
@@ -303,7 +330,15 @@ int main(int argc,char * argv[]){
         }
     }
 
+
+
+    if(console.joinable())console.join();
+    DestroyMenu(menu);
+    DestroyWindow(subHWND);
+    if(paint.joinable())paint.join();
     DestroyWindow(hwnd);
+    if(updates.joinable())updates.join();
+
     return 0;
 }
 
@@ -379,11 +414,108 @@ void FlashScreen(){
     RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
 }
 
+void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu){
+    CheckMenuItem(m,mi,stat?MF_CHECKED:MF_UNCHECKED);
+}
+
+bool DealMenu(int id){
+    switch(id){
+    case mChroma:
+        chroma = !chroma;
+        ToggleCheckedMenu(mChroma,chroma);
+        break;
+    case mCircles:
+        showCircles = !showCircles;
+        ToggleCheckedMenu(mCircles,showCircles);
+        break;
+    case mLines:
+        showLines = !showLines;
+        ToggleCheckedMenu(mLines,showLines);
+        break;
+    case mDisCoord:
+        discoord = !discoord;
+        ToggleCheckedMenu(mDisCoord,discoord);
+        break;
+    case mDisVectors:
+        disvec = !disvec;
+        ToggleCheckedMenu(mDisVectors,disvec);
+        break;
+    case mDisFVec:
+        disfvec = !disfvec;
+        ToggleCheckedMenu(mDisFVec,disfvec);
+        break;
+    case mPlay:
+        if(stop){
+            clocks.Start();
+        }else{
+            timeDL += clocks.Stop().all;
+        }
+        stop = !stop;
+        SetMenuText(menu,mPlay,stop?(LPSTR)"播放(Ctrl+P)":(LPSTR)"停止(Ctrl+P)");
+        break;
+    case mRepaint:
+        calstop = true;
+        point1.clear();
+        for(unsigned int xt0 = 0;xt0 < points.size();xt0++){
+            points[xt0].rotation = RadToDeg(points[xt0].orot);
+        }
+        calstop = false;
+        break;
+    case mReload:
+        calstop = true;
+        rderr = false;
+        points.clear();
+        point1.clear();
+        points = readVectors(opener,gc.err,gc.part_x,gc.part_y,gc.run_speed,gc.vertices_limit,gc.frame_limit,gc.scale_speed,gc.move_speed,gc.storing_limi,tr_CommS);
+        if(gc.err < 0){
+            string dst = "Cannot open file \"";
+            dst += opener;
+            dst += "\"!";
+            l.critical(dst);
+            criticalFlag = true;
+        }else{
+            string dxt = "Loaded ";
+            dxt += to_string(gc.err);
+            dxt += " vectors in total.";
+            l.info(dxt);
+        }
+        opx = gc.part_x;
+        opy = gc.part_y;
+        if(errors.compare("")){
+            rderr = true;
+            errors = string("无法正常加载文件，因为:\n") + errors;
+            l.error(errors);
+            errorFlag = true;
+        }
+        gc.part_x *= gc.scales;
+        gc.part_y *= gc.scales;
+        clocks.Stop();
+        clocks.Start();
+        calstop = false;
+        break;
+    case mNextFrame:
+        nextFrame = true;
+        break;
+//    case :
+//         = !;
+//        ToggleCheckedMenu(,);
+//        break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
     switch (uMsg){
     case WM_CLOSE:
         PostQuitMessage(0);
         break;
+    case WM_COMMAND:{
+        bool ret = DealMenu(LOWORD(wParam));
+        if(ret)return 0;
+    }
     default:
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
@@ -426,82 +558,10 @@ void DisableOpenGL (HWND hwnd, HDC hDC, HGLRC hRC){
     ReleaseDC(hwnd, hDC);
 }
 
-#define PerSpec 100
 #define calFPSFr 15
-void Display(){
-    EnableOpenGL(hwnd, &hDC, &hRC);
+void ConsoleDisplay(){
+    SimpFpsRestr restrictFps(30);
     while(!bQuit){
-        float tx =0,ty = 0;
-        frameGoes++;
-
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        glPushMatrix();
-        //glRotatef(theta, 0.0f, 0.0f, 1.0f);
-
-        glColor3f(1.0,1.0,1.0);
-        glBegin(GL_LINES);
-            //Draw the line
-            glVertex2f(pdpart.x,-1);
-            glVertex2f(pdpart.x,1);
-            glVertex2f(-1,pdpart.y);
-            glVertex2f(1,pdpart.y);
-            //Draw the vectors trail
-            Vector def = {0,0,0,0};
-            def.x = pos.x;
-            def.y = pos.y;
-
-            if(showCircles){
-                glColor3f(0.5f,0.5f,0.5f);
-                float tLen = 0;
-                for(unsigned int i = 0;i < points.size();i++){
-                    tLen = points[i].Length();
-                    glVertex2f((def.x+ tLen) / gc.part_x,def.y / gc.part_y);
-                    for(unsigned int p = 0;p < (unsigned int)(PerSpec * tLen /2);p++){
-                        tx = (tLen * cos(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.x) / gc.part_x;
-                        ty = (tLen * sin(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.y) / gc.part_y;
-                        glVertex2f(tx,ty);
-                        glVertex2f(tx,ty);
-                    }
-                    glVertex2f((def.x + tLen) / gc.part_x,def.y / gc.part_y);
-                    def.x += points[i].x;
-                    def.y += points[i].y;
-                }
-            }
-            //Draw the vectors
-            glColor3f(1.0,1.0,0.0);
-            def = {0,0,0,0};//temp = {0,0,0,0};
-            def.x = pos.x;
-            def.y = pos.y;
-            glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
-            for(unsigned int i = 0;i < points.size();i++){
-                def.x += points[i].x;
-                def.y += points[i].y;
-                glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
-                glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
-
-            }
-
-            glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
-            //Draw the main texture
-            glColor3f(1.0,1.0,1.0);
-            if(showLines){
-                glVertex2f(point1[0].x/ gc.part_x + pdpart.x,point1[0].y/ gc.part_y + pdpart.y);
-                for(unsigned int i = 0;i < point1.size();i++){
-                    tx = point1[i].x / gc.part_x + pdpart.x;
-                    ty = point1[i].y / gc.part_y + pdpart.y;
-                    glVertex2f(tx,ty);
-                    glVertex2f(tx,ty);
-                }
-            }
-            //Draw Our Moving Line
-            glVertex2f(pdpart.x,pdpart.y);
-            glVertex2f(point1[point1.size()-1].x / gc.part_x + pdpart.x,point1[point1.size()-1].y / gc.part_y + pdpart.y);
-        glEnd();
-
-        glPopMatrix();
-        SwapBuffers(hDC);
         ///Draw To Console
         SelectBitmap(hsubDC,bmp);
         SetBkColor(hsubDC,RGB(0,0,0));
@@ -543,25 +603,116 @@ void Display(){
                 ///炫彩字体
                 static string author = "Created by aaaa0ggmc(RockonDreaming)";
                 static int uvalue = 0;
-                int stx = 5;
-                for(unsigned int idx = 0;idx < author.length();++idx){
-                    SetTextColor(hsubDC,RGB(abs(sin(uvalue) + cos(idx)) * 200 + 55,abs(cos(uvalue) - sin(idx)) * 200 + 55,abs(sin(idx))) * 200 + 55);
-                    TextOut(hsubDC,stx,5,&(author[idx]),1);
-                    stx += metric.tmAveCharWidth;
+                if(chroma){
+                    int stx = 5;
+                    for(unsigned int idx = 0;idx < author.length();++idx){
+                        SetTextColor(hsubDC,RGB(abs(sin(uvalue) + cos(idx)) * 200 + 55,abs(cos(uvalue) - sin(idx)) * 200 + 55,abs(sin(idx))) * 200 + 55);
+                        TextOut(hsubDC,stx,5,&(author[idx]),1);
+                        stx += metric.tmAveCharWidth;
+                    }
+                    ++uvalue;
+                }else{
+                    TextOut(hsubDC,5,5,&(author[0]),author.length());
                 }
-                ++uvalue;
             }
         }
         BitBlt(subDC,0,0,424,424,hsubDC,0,0,SRCCOPY);
+        restrictFps.sleep();
+    }
+}
+
+#define PerSpec 100
+void Display(){
+    EnableOpenGL(hwnd, &hDC, &hRC);
+    SimpFpsRestr rest(gc.frame_limit);
+    while(!bQuit){
+        float tx =0,ty = 0;
+        frameGoes++;
+
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glPushMatrix();
+//        glRotatef(theta, 0.0f, 1.0f, 0.0f);
+
+        glColor3f(1.0,1.0,1.0);
+        glBegin(GL_LINES);
+            //Draw the line
+            if(discoord){
+                glVertex2f(pdpart.x,-1);
+                glVertex2f(pdpart.x,1);
+                glVertex2f(-1,pdpart.y);
+                glVertex2f(1,pdpart.y);
+            }
+            //Draw the vectors trail
+            Vector def = {0,0,0,0};
+            def.x = pos.x;
+            def.y = pos.y;
+
+            if(showCircles){
+                glColor3f(0.5f,0.5f,0.5f);
+                float tLen = 0;
+                for(unsigned int i = 0;i < points.size();i++){
+                    tLen = points[i].Length();
+                    glVertex2f((def.x+ tLen) / gc.part_x,def.y / gc.part_y);
+                    for(unsigned int p = 0;p < (unsigned int)(PerSpec * tLen /2);p++){
+                        tx = (tLen * cos(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.x) / gc.part_x;
+                        ty = (tLen * sin(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.y) / gc.part_y;
+                        glVertex2f(tx,ty);
+                        glVertex2f(tx,ty);
+                    }
+                    glVertex2f((def.x + tLen) / gc.part_x,def.y / gc.part_y);
+                    def.x += points[i].x;
+                    def.y += points[i].y;
+                }
+            }
+            //Draw the vectors
+            if(disvec){
+                glColor3f(1.0,1.0,0.0);
+                def = {0,0,0,0};//temp = {0,0,0,0};
+                def.x = pos.x;
+                def.y = pos.y;
+                glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+                for(unsigned int i = 0;i < points.size();i++){
+                    def.x += points[i].x;
+                    def.y += points[i].y;
+                    glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+                    glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+
+                }
+
+                glVertex2f(def.x / gc.part_x,def.y / gc.part_y);
+            }
+            //Draw the main texture
+            if(showLines){
+                glColor3f(1.0,1.0,1.0);
+                glVertex2f(point1[0].x/ gc.part_x + pdpart.x,point1[0].y/ gc.part_y + pdpart.y);
+                for(unsigned int i = 0;i < point1.size();i++){
+                    tx = point1[i].x / gc.part_x + pdpart.x;
+                    ty = point1[i].y / gc.part_y + pdpart.y;
+                    glVertex2f(tx,ty);
+                    glVertex2f(tx,ty);
+                }
+            }
+            //Draw Our Moving Line
+            if(disfvec){
+                glColor3f(1.0,1.0,1.0);
+                glVertex2f(pdpart.x,pdpart.y);
+                glVertex2f(point1[point1.size()-1].x / gc.part_x + pdpart.x,point1[point1.size()-1].y / gc.part_y + pdpart.y);
+            }
+        glEnd();
+
+        glPopMatrix();
+        SwapBuffers(hDC);
         if(nextFrame){
             nextFrame = !nextFrame;
             if(!clocks.isStop())timeDL += clocks.Stop().all;
             else timeDL += 10 * floating_scaling;
-            ///TODO:Reset string
             stop = true;
+            SetMenuText(menu,mPlay,(LPSTR)"播放(Ctrl+P)");
         }
         if(gc.frame_limit > 0){
-            Sleep(1000 / gc.frame_limit);
+            rest.sleep();
         }
         elapseTime = loffset.GetOffset();
     }
@@ -569,6 +720,7 @@ void Display(){
 }
 
 void UpdatingPainting(){
+    SimpFpsRestr rest(120);
     while(!bQuit){
         ///calstop : stop multiple thread causes undefine behavior
         if((!stop && !calstop) || nextFrame){
@@ -585,7 +737,7 @@ void UpdatingPainting(){
             if(point1.size() > (unsigned int)(gc.vertices_limit))
                 point1.erase(point1.begin());
         }
-        Sleep(1000 / gc.frame_limit + 4);
+        rest.sleep();
     }
 }
 

@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <CodeBlocks_layout_file>
 	<FileVersion major="1" minor="0" />
-	<ActiveTarget name="Debug" />
+	<ActiveTarget name="Release" />
 	<File name="main.cpp" open="1" top="1" tabpos="1" split="0" active="1" splitpos="0" zoom_1="3" zoom_2="0">
 		<Cursor>
-			<Cursor1 position="16881" topLine="453" />
+			<Cursor1 position="2675" topLine="125" />
 		</Cursor>
 		<Folding>
-			<Collapse line="330" />
-			<Collapse line="392" />
-			<Collapse line="422" />
+			<Collapse line="365" />
+			<Collapse line="554" />
+			<Collapse line="651" />
+			<Collapse line="669" />
 		</Folding>
+	</File>
+	<File name="vmath.hpp" open="1" top="0" tabpos="2" split="0" active="1" splitpos="0" zoom_1="3" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="5092" topLine="173" />
+		</Cursor>
 	</File>
 </CodeBlocks_layout_file>

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string>
 #include <fstream>
+#include <CClock.h>
 #include <ctype.h>
 
 using namespace std;
@@ -167,5 +168,24 @@ vector<Vector> readVectors(string fname,int & err,float & px,float & py,
 string GetErrors(){
     return errors;
 }
+
+struct SimpFpsRestr{
+    cck::Clock clk;
+    float desire;
+    SimpFpsRestr(float wantFps = 60){
+        desire = 1000 / wantFps;
+    }
+
+    void sleep(){
+        float elapse = clk.GetOffset();
+        if(elapse >= desire)return;
+        Sleep(desire - elapse);
+    }
+
+    void reset(float wantFps){
+        desire = 1000 / wantFps;
+    }
+
+};
 
 #endif // VMATH_HPP_INCLUDED
