@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <BrowseTracker_layout_file>
 	<ActiveTarget name="Release" />
-	<File name="main.cpp" open="1" top="1" tabpos="1">
-		<Cursor position="10770" topLine="365" />
-		<BrowseMarks positions="" />
+	<File name="rc.rc" open="1" top="0" tabpos="3">
+		<Cursor position="185" topLine="0" />
 	</File>
 	<File name="vmath.hpp" open="1" top="0" tabpos="2">
-		<Cursor position="5092" topLine="167" />
+		<Cursor position="4023" topLine="130" />
+	</File>
+	<File name="main.cpp" open="1" top="1" tabpos="1">
+		<Cursor position="18343" topLine="558" />
 		<BrowseMarks positions="" />
 	</File>
 </BrowseTracker_layout_file>

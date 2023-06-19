@@ -33,6 +33,7 @@
 
 #define DATA_CONFIG "data/config.cfg"
 #define DATA_PATH "data/"
+#define DATA_OUTPUT "data/out.txt"
 
 using namespace std;
 using namespace cck;
@@ -55,8 +56,8 @@ struct GConfig{
         run_speed = 10;
         frame_limit = -1;
         vertices_limit = 256;
-        scale_speed = 0.01;
-        move_speed = 1;
+        scale_speed = 3;
+        move_speed = 4;
         storing_limi = 2;
         scales = 1;
     }
@@ -74,6 +75,7 @@ void SetMenuText(HMENU menu,int command,LPSTR str);
 int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t,int LineSpace,TEXTMETRIC&);
 void ConsoleDisplay();
 bool DealMenu(int id);
+int OpenFileS();
 
 ///Logs//
 LogSaver logSaver;
@@ -93,13 +95,15 @@ bool errorFlag = false;
 
 vector<Vector> points,point1;
 
+string lastDir;
+
 //Windows
 ///main window-OpenGL runs here
 HWND hwnd;
 ///sub window,controls
 HWND subHWND;
 
-const char * opener = "fft.math";
+string opener = "fft.math";
 
 #define MENUITEM(X,V) const ULONG_PTR X = V
 MENUITEM(mRepaint,1);
@@ -114,6 +118,8 @@ MENUITEM(mChroma,9);
 MENUITEM(mDisCoord,10);
 MENUITEM(mDisVectors,11);
 MENUITEM(mDisFVec,12);
+MENUITEM(mNew,13);
+MENUITEM(mHelp,14);
 
 bool stop = false;
 bool calstop = false;
@@ -197,7 +203,8 @@ int main(int argc,char * argv[]){
         ofs << (disfvec?"1":"-1");
         ofs << " ";
         ofs << (chroma?"1":"-1");
-        ofs << " ";
+        ofs << lastDir;
+        ofs << "\n";
         ofs.close();
         if(criticalFlag){
             MessageBox(NULL,"程序发生过致命错误！请查看data/log.txt检查错误！","CriticalErrors",MB_OK | MB_ICONERROR | MB_TOPMOST);
@@ -248,6 +255,14 @@ int main(int argc,char * argv[]){
                 chroma = (vxd+1)?true:false;
                 vxd = 0;
             }
+            lastDir = "";
+            getline(ifs,lastDir);
+            if(!lastDir.compare("")){
+                char * env = getenv("TEMP");
+                if(env){
+                    lastDir = env;
+                }else lastDir = "C:\\";
+            }
 
 
             if(flag == 0){
@@ -286,6 +301,8 @@ int main(int argc,char * argv[]){
             sx += " vectors in total.";
             l.info(sx);
         }
+        opx = gc.part_x;
+        opy = gc.part_y;
     }
     tr_Progess = 90;
     tr_CommS = "注册窗口,运行OpenGL...";
@@ -318,32 +335,34 @@ int main(int argc,char * argv[]){
         AppendMenu(menu,MF_POPUP,(UINT_PTR)controls,"控制");
         AppendMenu(menu,MF_POPUP,(UINT_PTR)view,"显示");
         AppendMenu(menu,MF_POPUP,(UINT_PTR)stores,"存储");
+        AppendMenu(menu,MF_STRING,mHelp,"帮助");
 
         //views
-        AppendMenu(view,MF_CHECKED,mLines,"显示线段(Ctrl+L)");
+        AppendMenu(view,MF_CHECKED,mLines,"显示线段(L)");
         ToggleCheckedMenu(mLines,showLines);
-        AppendMenu(view,MF_CHECKED,mCircles,"显示圆圈(Ctrl+O)");
+        AppendMenu(view,MF_CHECKED,mCircles,"显示圆圈(O)");
         ToggleCheckedMenu(mCircles,showCircles);
-        AppendMenu(view,MF_CHECKED,mDisCoord,"显示坐标系(Ctrl+C)");
+        AppendMenu(view,MF_CHECKED,mDisCoord,"显示坐标系(C)");
         ToggleCheckedMenu(mDisCoord,discoord);
-        AppendMenu(view,MF_CHECKED,mDisVectors,"显示向量(Ctrl+V)");
+        AppendMenu(view,MF_CHECKED,mDisVectors,"显示向量(V)");
         ToggleCheckedMenu(mDisVectors,disvec);
-        AppendMenu(view,MF_CHECKED,mDisFVec,"显示最终向量(Ctrl+F)");
+        AppendMenu(view,MF_CHECKED,mDisFVec,"显示最终向量(F)");
         ToggleCheckedMenu(mDisFVec,disfvec);
         AppendMenu(view,MF_SEPARATOR,0,0);
-        AppendMenu(view,MF_CHECKED,mChroma,"Chroma(Ctrl+M)");
+        AppendMenu(view,MF_CHECKED,mChroma,"Chroma(M)");
         ToggleCheckedMenu(mChroma,chroma);
 
         //controls
-        AppendMenu(controls,MF_STRING,mPlay,"停止(Ctrl+P)");
-        AppendMenu(controls,MF_STRING,mNextFrame,"下一帧(Ctrl+N)");
+        AppendMenu(controls,MF_STRING,mPlay,"停止(空格)");
+        AppendMenu(controls,MF_STRING,mNextFrame,"下一帧(N)");
         AppendMenu(controls,MF_SEPARATOR,0,0);
-        AppendMenu(controls,MF_STRING,mRepaint,"重绘(Ctrl+Q)");
-        AppendMenu(controls,MF_STRING,mReload,"重新加载(Ctrl+W)");
+        AppendMenu(controls,MF_STRING,mRepaint,"重绘(Q)");
+        AppendMenu(controls,MF_STRING,mReload,"重新加载(W)");
 
         //stores
-        AppendMenu(stores,MF_STRING,mOpenFileP,"打开文件(Ctrl+O)");
-        AppendMenu(stores,MF_STRING,mStore,"存储数据(Ctrl+S)");
+        AppendMenu(stores,MF_STRING,mOpenFileP,"打开文件(O)");
+        AppendMenu(stores,MF_STRING,mNew,"读取新文件(I)");
+        AppendMenu(stores,MF_STRING,mStore,"存储数据(S)");
 
         hwnd = CreateWindowEx(0,"FT","Look For FT",WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
                               600,600,NULL,NULL,NULL,NULL);
@@ -371,24 +390,7 @@ int main(int argc,char * argv[]){
 
     tr_Progess = 100;
 
-    Clock timer;
     while (!bQuit){
-        if(GetKeyState(VK_CONTROL) & 0x8000 && timer.Now().offset >= 200){
-            timer.GetOffset();
-            if(GetKeyState('L') & 0x8000){
-                DealMenu(mLines);
-            }else if(GetKeyState('O') & 0x8000){
-                DealMenu(mCircles);
-            }else if(GetKeyState('C') & 0x8000){
-                DealMenu(mDisCoord);
-            }else if(GetKeyState('V') & 0x8000){
-                DealMenu(mDisVectors);
-            }else if(GetKeyState('F') & 0x8000){
-                DealMenu(mDisFVec);
-            }else if(GetKeyState('M') & 0x8000){
-                DealMenu(mChroma);
-            }
-        }
         /* check for messages */
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)){
             /* handle or dispatch messages */
@@ -539,9 +541,28 @@ bool DealMenu(int id){
         system(command.c_str());
         break;
     }
-    case mStore:
-        MessageBox(NULL,"还没做","Error",MB_OK | MB_ICONERROR | MB_TOPMOST);
+    case mStore:{
+        ofstream kofs(DATA_OUTPUT);
+        if(kofs.bad()){
+            l.error("Cannot open file \"" DATA_OUTPUT "\" to write down the data!");
+            errorFlag = true;
+        }else{
+            kofs << "X Y \n";
+            for(Vector & vx : point1){
+                kofs << vx.x << " " << vx.y << "\n";
+            }
+            l.info("Data is written to \"" DATA_OUTPUT "\" successfully!");
+            kofs.close();
+        }
         break;
+    }
+    case mNew:
+        OpenFileS();
+        break;
+    case mHelp:{
+        system("start notepad " ".\\data\\help_zh_cn.txt");
+        break;
+    }
     case mReload:
         calstop = true;
         rderr = false;
@@ -589,6 +610,18 @@ bool DealMenu(int id){
 
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
+    if(GetAsyncKeyState('W') || GetAsyncKeyState(VK_UP)){
+        pos.y -= gc.move_speed * gc.scales * elapseTime;
+    }else if(GetAsyncKeyState('S') || GetAsyncKeyState(VK_DOWN)){
+        pos.y += gc.move_speed * gc.scales * elapseTime;
+    }
+    if(GetAsyncKeyState('A') || GetAsyncKeyState(VK_LEFT)){
+        pos.x += gc.move_speed * gc.scales * elapseTime;
+    }else if(GetAsyncKeyState('D') || GetAsyncKeyState(VK_RIGHT)){
+        pos.x -= gc.move_speed * gc.scales * elapseTime;
+    }
+    pdpart.x = pos.x / gc.part_x;
+    pdpart.y = pos.y / gc.part_y;
     switch (uMsg){
     case WM_CLOSE:
         PostQuitMessage(0);
@@ -597,6 +630,110 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
         bool ret = DealMenu(LOWORD(wParam));
         if(ret)return 0;
     }
+    case WM_KEYDOWN:{
+        switch (wParam)
+        {
+            case '1':
+                floating_scaling = 1;
+                break;
+            case '2':
+                floating_scaling = 2;
+                break;
+            case '3':
+                floating_scaling = 3;
+                break;
+            case '4':
+                floating_scaling = 4;
+                break;
+            case '5':
+                floating_scaling = 5;
+                break;
+            case '6':
+                floating_scaling = 6;
+                break;
+            case '7':
+                floating_scaling = 7;
+                break;
+            case '8':
+                floating_scaling = 8;
+                break;
+            case '9':
+                floating_scaling = 9;
+                break;
+            case 'N':
+                nextFrame = true;
+                break;
+            case 'L':
+                DealMenu(mLines);
+                break;
+            case 'O':
+                DealMenu(mCircles);
+                break;
+            case 'C':
+                DealMenu(mDisCoord);
+                break;
+            case 'V':
+                DealMenu(mDisVectors);
+                break;
+            case 'F':
+                DealMenu(mDisFVec);
+                break;
+            case 'M':
+                DealMenu(mChroma);
+                break;
+            case VK_SPACE:
+               DealMenu(mPlay);
+                break;
+            case VK_ADD:
+                ///use multiply else not be a round///
+                gc.scales -= gc.scale_speed * elapseTime / 1000;
+                if(gc.scales <= 0.001)gc.scales = 0.001;
+                gc.part_x = opx * gc.scales;
+                gc.part_y = opy * gc.scales;
+                break;
+            case VK_SUBTRACT:
+                gc.scales += gc.scale_speed  * elapseTime / 1000;
+                if(gc.scales <= 0.001)gc.scales = 0.001;
+                gc.part_x = opx * gc.scales;
+                gc.part_y = opy * gc.scales;
+                break;
+            case 229:
+                switch(lParam){
+                    case 1074593793://long press
+                    case 851969://'+'
+                        gc.scales -= gc.scale_speed * elapseTime / 1000;
+                        if(gc.scales <= 0.001)gc.scales = 0.001;
+                        gc.part_x = opx * gc.scales;
+                        gc.part_y = opy * gc.scales;
+                        break;
+                    case 1074528257:
+                    case 786433://'-'
+                        gc.scales -= gc.scale_speed * elapseTime / 1000;
+                        if(gc.scales <= 0.001)gc.scales = 0.001;
+                        gc.part_x = opx * gc.scales;
+                        gc.part_y = opy * gc.scales;
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            case 187:
+                gc.scales -= gc.scale_speed * elapseTime / 1000;
+                if(gc.scales <= 0.001)gc.scales = 0.001;
+                gc.part_x = opx * gc.scales;
+                gc.part_y = opy * gc.scales;
+                break;
+            case 189:
+                gc.scales += gc.scale_speed * elapseTime / 1000;
+                if(gc.scales <= 0.001)gc.scales = 0.001;
+                gc.part_x = opx * gc.scales;
+                gc.part_y = opy * gc.scales;
+                break;
+        }
+        pdpart.x = pos.x / gc.part_x;
+        pdpart.y = pos.y / gc.part_y;
+    }
+    break;
     default:
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
@@ -841,4 +978,27 @@ int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t Length,int Line
     }
     TextOut(pDC,x,y,&(text[Start]),i-Start);
     return Lines;
+}
+
+int OpenFileS(){
+    BOOL bSel;
+    OPENFILENAME file = {0};
+    string filePath = "";
+    filePath.resize(MAX_PATH);
+    ZeroMemory((void*)filePath.c_str(),sizeof(TCHAR) * MAX_PATH);
+    file.hwndOwner = subHWND;
+    file.lStructSize = sizeof(file);
+    file.lpstrFilter = TEXT("*.*(*.*)\0*.*\0");//要选择的文件后缀
+    file.lpstrInitialDir = lastDir.c_str();//默认的文件路径
+    file.lpstrFile = (LPSTR)filePath.c_str();//存放文件的缓冲区
+    file.nMaxFile = MAX_PATH;
+    file.nFilterIndex = 0;
+    file.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;//标志如果是多选要加上OFN_ALLOWMULTISELECT
+
+    bSel = GetOpenFileName(&file);
+    if(bSel){
+        opener = filePath;
+        DealMenu(mReload);
+    }
+    return 0;
 }

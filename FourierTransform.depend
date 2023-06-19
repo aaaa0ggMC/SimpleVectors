@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1687137128 source:c:\users\yd\desktop\c++\simplevectors\main.cpp
+1687179451 source:c:\users\yd\desktop\c++\simplevectors\main.cpp
 	<string>
 	<iostream>
 	<cmath>
@@ -43,10 +43,10 @@
 
 1687077111 c:\users\yd\desktop\c++\simplevectors\rc.h
 
-1687077332 source:c:\users\yd\desktop\c++\simplevectors\rc.rc
+1687177394 source:c:\users\yd\desktop\c++\simplevectors\rc.rc
 	"rc.h"
 
-1687135237 c:\users\yd\desktop\c++\simplevectors\vmath.hpp
+1687179536 c:\users\yd\desktop\c++\simplevectors\vmath.hpp
 	<iostream>
 	<vector>
 	<stdio.h>
