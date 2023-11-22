@@ -44,7 +44,7 @@ Vector Vector::Normalize(){
 
 void Vector::Rotate(float diff){
     float len = Length();
-    rotation = (diff/secperRound) + RadToDeg(orot);
+    rotation = 2* PI * (diff/secperRound) + RadToDeg(orot);
     //cout << rotation << " " << diff << endl;
     x = len * (float)cos(rotation);
     y = len * (float)sin(rotation);

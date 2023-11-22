@@ -55,3 +55,64 @@
 	<CClock.h>
 	<ctype.h>
 
+1687177394 source:e:\projects\coc++\simplevectors\rc.rc
+	"rc.h"
+
+1687077111 e:\projects\coc++\simplevectors\rc.h
+
+1687177394 source:i:\projects\coc++\simplevectors\rc.rc
+	"rc.h"
+
+1687077111 i:\projects\coc++\simplevectors\rc.h
+
+1699230128 source:i:\projects\coc++\simplevectors\main.cpp
+	<string>
+	<iostream>
+	<cmath>
+	<fstream>
+	<cstdio>
+	<cstdlib>
+	<cstring>
+	<atomic>
+	<thread>
+	<ctime>
+	<vector>
+	<windows.h>
+	<windowsx.h>
+	<GL/gl.h>
+	<CClock.h>
+	<Translator.h>
+	<MultiEnString.h>
+	<spdlog.h>
+	"rc.h"
+	"vmath.hpp"
+
+1687004437 i:\projects\coc++\simplevectors\includes\cclock.h
+	<windows.h>
+
+1685864176 i:\projects\coc++\simplevectors\includes\translator.h
+	<string>
+	<vector>
+	<unordered_map>
+	<MultiEnString.h>
+	<stdarg.h>
+
+1682731036 i:\projects\coc++\simplevectors\includes\multienstring.h
+	<string>
+
+1685857531 i:\projects\coc++\simplevectors\includes\spdlog.h
+	<memory>
+	<string>
+	<windows.h>
+	<fstream>
+	<CClock.h>
+
+1699229699 i:\projects\coc++\simplevectors\vmath.hpp
+	<iostream>
+	<vector>
+	<stdio.h>
+	<string>
+	<fstream>
+	<CClock.h>
+	<ctype.h>
+

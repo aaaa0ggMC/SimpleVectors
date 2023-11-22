@@ -113,13 +113,14 @@ MENUITEM(mStore,4);
 MENUITEM(mOpenFileP,5);
 MENUITEM(mLines,6);
 MENUITEM(mPlay,7);
-MENUITEM(mNextFrame,8);
 MENUITEM(mChroma,9);
 MENUITEM(mDisCoord,10);
 MENUITEM(mDisVectors,11);
 MENUITEM(mDisFVec,12);
 MENUITEM(mNew,13);
 MENUITEM(mHelp,14);
+MENUITEM(mNeon,15);
+MENUITEM(mFollow,16);
 
 bool stop = false;
 bool calstop = false;
@@ -130,13 +131,13 @@ bool chroma = true;
 bool discoord = true;
 bool disvec = true;
 bool disfvec = true;
+bool neon = false;
+bool follow = false;
 
 //下一帧时间增幅倍数
 unsigned int floating_scaling = 5;
 
 char * outputbuf = NULL;
-
-DWORD timeDL = 0;
 
 bool rderr = false;
 
@@ -154,7 +155,7 @@ HGLRC hRC;
 TEXTMETRIC metric;
 
 atomic<float> elapseTime;
-Clock loffset(false),fpsClk(false),clocks(false);
+Clock loffset(false),fpsClk(false);
 
 unsigned int frameGoes = 0;
 
@@ -165,7 +166,10 @@ int preFrameC = 0;
 int mxFrame = 0;
 
 float opx = 0,opy = 0;
+float timeCur;
 
+
+cck::Clock cneon;
 
 void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu);
 
@@ -174,6 +178,8 @@ void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu);
 int main(int argc,char * argv[]){
     WNDCLASSEX wcex;
     MSG msg;
+
+    srand(time(0));
 
     outputbuf = new char[MAX_INFO_SIZE];
     ZeroMemory(outputbuf,sizeof(char) * MAX_INFO_SIZE);
@@ -205,6 +211,9 @@ int main(int argc,char * argv[]){
         ofs << (chroma?"1":"-1");
         ofs << lastDir;
         ofs << "\n";
+        ofs << (neon?"1":"-1");
+        ofs << " ";
+        ofs << (follow?"1":"-1");
         ofs.close();
         if(criticalFlag){
             MessageBox(NULL,"程序发生过致命错误！请查看data/log.txt检查错误！","CriticalErrors",MB_OK | MB_ICONERROR | MB_TOPMOST);
@@ -217,6 +226,7 @@ int main(int argc,char * argv[]){
         delete [] outputbuf;
     });
     ts.LoadTranslateFiles(DATA_PATH);
+    l.info("Loaded translates...");
     {
         //read statuses
         ifstream ifs(DATA_CONFIG);
@@ -264,6 +274,16 @@ int main(int argc,char * argv[]){
                 }else lastDir = "C:\\";
             }
 
+            ifs >> vxd;
+            if(vxd){
+                neon = (vxd+1)?true:false;
+                vxd = 0;
+            }
+            ifs >> vxd;
+            if(vxd){
+                follow = (vxd+1)?true:false;
+                vxd = 0;
+            }
 
             if(flag == 0){
                 flag = LOG_RELE;
@@ -277,13 +297,14 @@ int main(int argc,char * argv[]){
         }
     }
     tr_Progess = 40;
+    l.info("Loading files...");
     {
         if(argc < 2){
             l.info("Given no arguments,we choose \"fft.math\" as a default file to load.");
-        }else if(!strcmp(argv[2],"-help") || !strcmp(argv[2],"-h") || !strcmp(argv[2],"-?") || !strcmp(argv[2],"?")){
+        }else if(!strcmp(argv[1],"-help") || !strcmp(argv[1],"-h") || !strcmp(argv[1],"-?") || !strcmp(argv[1],"?")){
             HelpPage(ts.Translate(ACCESS_TOKEN,"en_us").GetUTF8().c_str());
         }else{
-            opener = argv[2];
+            opener = argv[1];
         }
         l.info("Loading Vectors...");
         points = readVectors(opener,gc.err,gc.part_x,gc.part_y,gc.run_speed,gc.vertices_limit,gc.frame_limit,gc.scale_speed,gc.move_speed,gc.storing_limi,tr_CommS);
@@ -350,11 +371,14 @@ int main(int argc,char * argv[]){
         ToggleCheckedMenu(mDisFVec,disfvec);
         AppendMenu(view,MF_SEPARATOR,0,0);
         AppendMenu(view,MF_CHECKED,mChroma,"Chroma(M)");
+        AppendMenu(view,MF_CHECKED,mNeon,"Neon");
+        AppendMenu(view,MF_CHECKED,mFollow,"Follow");
         ToggleCheckedMenu(mChroma,chroma);
+        ToggleCheckedMenu(mNeon,neon);
+        ToggleCheckedMenu(mFollow,follow);
 
         //controls
         AppendMenu(controls,MF_STRING,mPlay,"停止(空格)");
-        AppendMenu(controls,MF_STRING,mNextFrame,"下一帧(N)");
         AppendMenu(controls,MF_SEPARATOR,0,0);
         AppendMenu(controls,MF_STRING,mRepaint,"重绘(Q)");
         AppendMenu(controls,MF_STRING,mReload,"重新加载(W)");
@@ -386,7 +410,6 @@ int main(int argc,char * argv[]){
 
     loffset.Start();
     fpsClk.Start();
-    clocks.Start();
 
     tr_Progess = 100;
 
@@ -497,6 +520,14 @@ bool DealMenu(int id){
         chroma = !chroma;
         ToggleCheckedMenu(mChroma,chroma);
         break;
+    case mNeon:
+        neon = !neon;
+        ToggleCheckedMenu(mNeon,neon);
+        break;
+    case mFollow:
+        follow = !follow;
+        ToggleCheckedMenu(mFollow,follow);
+        break;
     case mCircles:
         showCircles = !showCircles;
         ToggleCheckedMenu(mCircles,showCircles);
@@ -518,11 +549,6 @@ bool DealMenu(int id){
         ToggleCheckedMenu(mDisFVec,disfvec);
         break;
     case mPlay:
-        if(stop){
-            clocks.Start();
-        }else{
-            timeDL += clocks.Stop().all;
-        }
         stop = !stop;
         SetMenuText(menu,mPlay,stop?(LPSTR)"播放(Ctrl+P)":(LPSTR)"停止(Ctrl+P)");
         break;
@@ -547,7 +573,7 @@ bool DealMenu(int id){
             l.error("Cannot open file \"" DATA_OUTPUT "\" to write down the data!");
             errorFlag = true;
         }else{
-            kofs << "X Y \n";
+            kofs << point1.size() << " " << "-32 32 " << timeCur <<endl;
             for(Vector & vx : point1){
                 kofs << vx.x << " " << vx.y << "\n";
             }
@@ -591,12 +617,7 @@ bool DealMenu(int id){
         }
         gc.part_x *= gc.scales;
         gc.part_y *= gc.scales;
-        clocks.Stop();
-        clocks.Start();
         calstop = false;
-        break;
-    case mNextFrame:
-        nextFrame = true;
         break;
 //    case :
 //         = !;
@@ -610,14 +631,14 @@ bool DealMenu(int id){
 
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
-    if(GetAsyncKeyState('W') || GetAsyncKeyState(VK_UP)){
+    if(GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000){
         pos.y -= gc.move_speed * gc.scales * elapseTime;
-    }else if(GetAsyncKeyState('S') || GetAsyncKeyState(VK_DOWN)){
+    }else if(GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000){
         pos.y += gc.move_speed * gc.scales * elapseTime;
     }
-    if(GetAsyncKeyState('A') || GetAsyncKeyState(VK_LEFT)){
+    if(GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000){
         pos.x += gc.move_speed * gc.scales * elapseTime;
-    }else if(GetAsyncKeyState('D') || GetAsyncKeyState(VK_RIGHT)){
+    }else if(GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000){
         pos.x -= gc.move_speed * gc.scales * elapseTime;
     }
     pdpart.x = pos.x / gc.part_x;
@@ -809,8 +830,8 @@ void ConsoleDisplay(){
                 "向量的数量:%d\n"
                 "点的数量:%d\n"
                 "\n%s%s",
-                preFrameC,mxFrame,clocks.GetALLTime()+timeDL,
-                (clocks.GetALLTime()+timeDL)/1000.0,
+                preFrameC,mxFrame,timeCur * 1000,
+                timeCur,
                 point1[point1.size()-1].x,point1[point1.size()-1].y,
                 points.size(),point1.size(),rderr?"错误被存储在了 data/log.txt 中\n":"",
                 "PS:命令行里输入 -help或者查看data/help_zh_cn.txt 来查看帮助 :=)\n");
@@ -844,6 +865,14 @@ void Display(){
     EnableOpenGL(hwnd, &hDC, &hRC);
     SimpFpsRestr rest(gc.frame_limit);
     while(!bQuit){
+
+        if(follow){
+            pos.x = -point1[point1.size()-1].x;
+            pos.y = -point1[point1.size()-1].y;
+            pdpart.x = pos.x / gc.part_x;
+            pdpart.y = pos.y / gc.part_y;
+        }
+
         float tx =0,ty = 0;
         frameGoes++;
 
@@ -904,10 +933,18 @@ void Display(){
             //Draw the main texture
             if(showLines){
                 glColor3f(1.0,1.0,1.0);
+                if(neon)glColor3f(
+                    0.3*sin(cneon.GetALLTime()/500.0) + 0.7,
+                    0.3*cos(cneon.GetALLTime()/500.0) + 0.7,
+                    0.3*sin(2*cneon.GetALLTime()/400.0) + 0.7
+                );
                 glVertex2f(point1[0].x/ gc.part_x + pdpart.x,point1[0].y/ gc.part_y + pdpart.y);
                 for(unsigned int i = 0;i < point1.size();i++){
                     tx = point1[i].x / gc.part_x + pdpart.x;
                     ty = point1[i].y / gc.part_y + pdpart.y;
+                    //if(neon){
+                    //    glColor3f((rand()%128 / 256.0 + 0.5),(rand()%128 / 256.0 + 0.5),(rand()%128 / 256.0 + 0.5));
+                    //}
                     glVertex2f(tx,ty);
                     glVertex2f(tx,ty);
                 }
@@ -922,13 +959,6 @@ void Display(){
 
         glPopMatrix();
         SwapBuffers(hDC);
-        if(nextFrame){
-            nextFrame = !nextFrame;
-            if(!clocks.isStop())timeDL += clocks.Stop().all;
-            else timeDL += 10 * floating_scaling;
-            stop = true;
-            SetMenuText(menu,mPlay,(LPSTR)"播放(Ctrl+P)");
-        }
         if(gc.frame_limit > 0){
             rest.sleep();
         }
@@ -938,22 +968,24 @@ void Display(){
 }
 
 void UpdatingPainting(){
-    SimpFpsRestr rest(120);
+    SimpFpsRestr rest(100);
     while(!bQuit){
         ///calstop : stop multiple thread causes undefine behavior
         if((!stop && !calstop) || nextFrame){
+            nextFrame = false;
             ///Calculating Painting Data
             Vector b = {0,0,0};
             for(unsigned int i = 0;i < points.size();i++){
                 //Read Infinite
                 //Multiply speed
-                if(points[i].secperRound != RINFINITE)points[i].Rotate(((double)(clocks.GetALLTime() + timeDL) * gc.run_speed)/(double)1000);
+                if(points[i].secperRound != RINFINITE)points[i].Rotate(timeCur);
                 b.x += points[i].x;
                 b.y += points[i].y;
             }
             point1.push_back(b);
-            if(point1.size() > (unsigned int)(gc.vertices_limit))
+            if(gc.vertices_limit != -1 && point1.size() > (unsigned int)(gc.vertices_limit))
                 point1.erase(point1.begin());
+            timeCur += 0.01 * gc.run_speed;
         }
         rest.sleep();
     }
