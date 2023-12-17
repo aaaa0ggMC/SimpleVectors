@@ -50,6 +50,7 @@ struct GConfig{
     float move_speed;
     float storing_limi;
     float scales;
+    float oneeqw;
     GConfig(){
         err = 0;
         part_x = part_y = 40;
@@ -60,6 +61,7 @@ struct GConfig{
         move_speed = 4;
         storing_limi = 2;
         scales = 1;
+        oneeqw = 1;
     }
 };
 
@@ -225,6 +227,7 @@ int main(int argc,char * argv[]){
         if(hsubDC)DeleteDC(hsubDC);
         delete [] outputbuf;
     });
+
     ts.LoadTranslateFiles(DATA_PATH);
     l.info("Loaded translates...");
     {
@@ -322,6 +325,7 @@ int main(int argc,char * argv[]){
             sx += " vectors in total.";
             l.info(sx);
         }
+        gc.oneeqw = 1/gc.scales;
         opx = gc.part_x;
         opy = gc.part_y;
     }
@@ -707,13 +711,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
                 break;
             case VK_ADD:
                 ///use multiply else not be a round///
-                gc.scales -= gc.scale_speed * elapseTime / 1000;
+                gc.oneeqw += gc.scale_speed * elapseTime;
+                gc.scales = 1/gc.oneeqw;
                 if(gc.scales <= 0.001)gc.scales = 0.001;
                 gc.part_x = opx * gc.scales;
                 gc.part_y = opy * gc.scales;
                 break;
             case VK_SUBTRACT:
-                gc.scales += gc.scale_speed  * elapseTime / 1000;
+                gc.oneeqw -= gc.scale_speed * elapseTime / 80;
+                gc.scales = 1/gc.oneeqw;
                 if(gc.scales <= 0.001)gc.scales = 0.001;
                 gc.part_x = opx * gc.scales;
                 gc.part_y = opy * gc.scales;
@@ -722,14 +728,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
                 switch(lParam){
                     case 1074593793://long press
                     case 851969://'+'
-                        gc.scales -= gc.scale_speed * elapseTime / 1000;
+                        gc.oneeqw += gc.scale_speed * elapseTime;
+                        gc.scales = 1/gc.oneeqw;
                         if(gc.scales <= 0.001)gc.scales = 0.001;
                         gc.part_x = opx * gc.scales;
                         gc.part_y = opy * gc.scales;
                         break;
                     case 1074528257:
                     case 786433://'-'
-                        gc.scales -= gc.scale_speed * elapseTime / 1000;
+                        gc.oneeqw -= gc.scale_speed * elapseTime;
+                        gc.scales = 1/gc.oneeqw;
                         if(gc.scales <= 0.001)gc.scales = 0.001;
                         gc.part_x = opx * gc.scales;
                         gc.part_y = opy * gc.scales;
@@ -739,13 +747,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
                 }
                 break;
             case 187:
-                gc.scales -= gc.scale_speed * elapseTime / 1000;
+                gc.oneeqw += gc.scale_speed * elapseTime / 80;
+                gc.scales = 1/gc.oneeqw;
                 if(gc.scales <= 0.001)gc.scales = 0.001;
                 gc.part_x = opx * gc.scales;
                 gc.part_y = opy * gc.scales;
                 break;
             case 189:
-                gc.scales += gc.scale_speed * elapseTime / 1000;
+                gc.oneeqw -= gc.scale_speed * elapseTime / 80;
+                gc.scales = 1/gc.oneeqw;
                 if(gc.scales <= 0.001)gc.scales = 0.001;
                 gc.part_x = opx * gc.scales;
                 gc.part_y = opy * gc.scales;
@@ -902,9 +912,10 @@ void Display(){
                 for(unsigned int i = 0;i < points.size();i++){
                     tLen = points[i].Length();
                     glVertex2f((def.x+ tLen) / gc.part_x,def.y / gc.part_y);
-                    for(unsigned int p = 0;p < (unsigned int)(PerSpec * tLen /2);p++){
-                        tx = (tLen * cos(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.x) / gc.part_x;
-                        ty = (tLen * sin(2*PI/(unsigned int)(PerSpec * tLen /2) * p) + def.y) / gc.part_y;
+                    unsigned int iterx = max(16.f,PerSpec * tLen /2);
+                    for(unsigned int p = 0;p < iterx;p++){
+                        tx = (tLen * cos(2*PI/iterx * p) + def.x) / gc.part_x;
+                        ty = (tLen * sin(2*PI/iterx * p) + def.y) / gc.part_y;
                         glVertex2f(tx,ty);
                         glVertex2f(tx,ty);
                     }
