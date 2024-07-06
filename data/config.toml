@@ -1,0 +1,12 @@
+language_id = "en_us"
+log_level =1118481
+follow = false
+neon = false
+chroma = true
+lastDir = ""
+[display]
+finalVector = true
+vectors = true
+coordinates = true
+rotatingCircles = false
+track = true

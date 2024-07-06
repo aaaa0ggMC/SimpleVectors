@@ -1,4 +1,4 @@
-///Structure:DW-2
+///Structure:SEH
 #define private public
 //Base C++ Libraries
 #include <string>
@@ -13,6 +13,8 @@
 #include <ctime>
 #include <vector>
 
+#include <stdlib.h>
+
 //Windows Libraries
 #include <windows.h>
 #include <windowsx.h>
@@ -21,23 +23,24 @@
 #include <GL/gl.h>
 
 //aaaa0ggmc Libraries
-#include <CClock.h>
-#include <Translator.h>
-#include <MultiEnString.h>
-#include <spdlog.h>
+#include <alib/aclock.h>
+#include <alib/atranslator.h>
+#include <alib/astring.h>
+#include <alib/alogger.h>
+#include <alib/adata.h>
 
 //Resources
 #include "rc.h"
 
 #include "vmath.hpp"
 
-#define DATA_CONFIG "data/config.cfg"
+#define DATA_CONFIG "data/config.toml"
 #define DATA_PATH "data/"
+#define DATA_TRANSLATIONS "data/translations"
 #define DATA_OUTPUT "data/out.txt"
 
 using namespace std;
-using namespace cck;
-using namespace alib;
+using namespace alib::ng;
 
 struct GConfig{
     int err;
@@ -80,8 +83,8 @@ bool DealMenu(int id);
 int OpenFileS();
 
 ///Logs//
-LogSaver logSaver;
-LogFactory l("FT",false,&logSaver);
+Logger logSaver;
+LogFactory l("FT",logSaver);
 
 //Communication between flash program & main
 string tr_CommS = "";
@@ -98,6 +101,8 @@ bool errorFlag = false;
 vector<Vector> points,point1;
 
 string lastDir;
+string consoleStr = "";
+string errStr = "";
 
 //Windows
 ///main window-OpenGL runs here
@@ -123,6 +128,7 @@ MENUITEM(mNew,13);
 MENUITEM(mHelp,14);
 MENUITEM(mNeon,15);
 MENUITEM(mFollow,16);
+MENUITEM(mBackO,17);
 
 bool stop = false;
 bool calstop = false;
@@ -154,6 +160,11 @@ HBRUSH blkBrush = (HBRUSH)GetStockObject(BLACK_BRUSH);
 BOOL bQuit = FALSE;
 HGLRC hRC;
 
+//Loading menus
+HMENU controls = CreatePopupMenu();
+HMENU view = CreatePopupMenu();
+HMENU stores = CreatePopupMenu();
+
 TEXTMETRIC metric;
 
 atomic<float> elapseTime;
@@ -171,7 +182,7 @@ float opx = 0,opy = 0;
 float timeCur;
 
 
-cck::Clock cneon;
+Clock cneon;
 
 void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu);
 
@@ -187,7 +198,7 @@ int main(int argc,char * argv[]){
     ZeroMemory(outputbuf,sizeof(char) * MAX_INFO_SIZE);
 
     //Init LogSavers
-    logSaver.SetFileOutput("data/log.txt");
+    logSaver.setOutputFile("data/log.txt");
     //Flash Window
     {
         thread tr(FlashScreen);
@@ -196,31 +207,26 @@ int main(int argc,char * argv[]){
     l.info("Loading Kernels...");
     //Load Translates
     atexit([]{
+        #define bool2str(x) ((x)?"true":"false")
         ofstream ofs(DATA_CONFIG);
         if(ofs.bad())return;
-        ofs << ts.Translate(ACCESS_TOKEN,"en_us").GetUTF8() << " " << logSaver.showlg;
-        ofs << " ";
-        ofs << (showLines?"1":"-1");
-        ofs << " ";
-        ofs << (showCircles?"1":"-1");
-        ofs << " ";
-        ofs << (discoord?"1":"-1");
-        ofs << " ";
-        ofs << (disvec?"1":"-1");
-        ofs << " ";
-        ofs << (disfvec?"1":"-1");
-        ofs << " ";
-        ofs << (chroma?"1":"-1");
-        ofs << lastDir;
-        ofs << "\n";
-        ofs << (neon?"1":"-1");
-        ofs << " ";
-        ofs << (follow?"1":"-1");
+        ofs << "language_id = \"" << ts.translate_def(ALIB_DEF_ACCESS,"en_us",ALIB_ENC_UTF8) << "\"\n";
+        ofs << "log_level =" << logSaver.showlg << "\n";
+        ofs << "follow = " << bool2str(follow) << "\n";
+        ofs << "neon = " << bool2str(neon) << "\n";
+        ofs << "chroma = " << bool2str(chroma) << "\n";
+        ofs << "lastDir = \"" << lastDir << "\"\n";
+        ofs << "[display]" << "\n";
+        ofs << "finalVector = " << bool2str(disfvec) << "\n";
+        ofs << "vectors = " << bool2str(disvec) << "\n";
+        ofs << "coordinates = " << bool2str(discoord) << "\n";
+        ofs << "rotatingCircles = " << bool2str(showCircles) << "\n";
+        ofs << "track = " << bool2str(showLines);
         ofs.close();
         if(criticalFlag){
-            MessageBox(NULL,"程序发生过致命错误！请查看data/log.txt检查错误！","CriticalErrors",MB_OK | MB_ICONERROR | MB_TOPMOST);
+            MessageBox(NULL,ts.translate_def("critical_error","程序发生过致命错误！请查看data/log.txt检查错误！").c_str(),"CriticalError",MB_OK | MB_ICONERROR | MB_TOPMOST);
         }else if(errorFlag){
-            MessageBox(NULL,"程序发生过错误！可查看data/log.txt检查错误！","Errors",MB_OK | MB_ICONEXCLAMATION | MB_TOPMOST);
+            MessageBox(NULL,ts.translate_def("error","程序发生过错误！可查看data/log.txt检查错误！").c_str(),"Error",MB_OK | MB_ICONEXCLAMATION | MB_TOPMOST);
         }
         ///释放绘制时创建的资源
         if(bmp)DeleteBitmap(bmp);
@@ -228,84 +234,48 @@ int main(int argc,char * argv[]){
         delete [] outputbuf;
     });
 
-    ts.LoadTranslateFiles(DATA_PATH);
-    l.info("Loaded translates...");
+    ts.readTranslationFiles(DATA_TRANSLATIONS);
+    l(LOG_INFO) << "Loaded translates,count:" << (int)ts.translations.size() << endlog;
     {
-        //read statuses
-        ifstream ifs(DATA_CONFIG);
-        if(!ifs.bad()){
-            string s = "";
-            int flag = 0;
-            int vxd = 0;
-            ifs >> s >> flag;
-            ifs >> vxd;
-            if(vxd){
-                showLines = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            ifs >> vxd;
-            if(vxd){
-                showCircles = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            ifs >> vxd;
-            if(vxd){
-                discoord = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            ifs >> vxd;
-            if(vxd){
-                disvec = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            ifs >> vxd;
-            if(vxd){
-                disfvec = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            ifs >> vxd;
-            if(vxd){
-                chroma = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            lastDir = "";
-            getline(ifs,lastDir);
-            if(!lastDir.compare("")){
-                char * env = getenv("TEMP");
-                if(env){
-                    lastDir = env;
-                }else lastDir = "C:\\";
-            }
-
-            ifs >> vxd;
-            if(vxd){
-                neon = (vxd+1)?true:false;
-                vxd = 0;
-            }
-            ifs >> vxd;
-            if(vxd){
-                follow = (vxd+1)?true:false;
-                vxd = 0;
-            }
-
-            if(flag == 0){
-                flag = LOG_RELE;
-            }
-            ifs.close();
-            ts.LoadTranslate(s);
-            logSaver.showLogs(flag);
-        }else{
+        GDoc doc;
+        int ret = doc.read_parseFileTOML(DATA_CONFIG);
+        if(ret){
             l.error("Cannot load configuration  \"" DATA_CONFIG "\",but it does little harm.");
             errorFlag = true;
+        }else{
+            #define boolCheck(s) ((!(s))?0:(strcmp(*s,"1")?0:1))
+            auto value = doc.get("language_id");
+            ts.loadTranslation((!value)?"en_us":*value);
+            value = doc.get("log_level");
+            logSaver.setLogVisibilities((!value)?LOG_FULL:atoi(*value));
+            value = doc.get("lastDir");
+            lastDir = (!value)?"":(*value);
+            follow = boolCheck(doc.get("follow"));
+            chroma = boolCheck(doc.get("chroma"));
+            neon = boolCheck(doc.get("neon"));
+            disvec = boolCheck(doc.get("display.vectors"));
+            discoord = boolCheck(doc.get("display.coordinates"));
+            showCircles = boolCheck(doc.get("display.rotatingCircles"));
+            showLines = boolCheck(doc.get("display.track"));
+            disfvec = boolCheck(doc.get("display.finalVector"));
         }
     }
+    consoleStr = Util::str_unescape(ts.translate_def("consoleStr",
+                            "fps:%d\n"
+                            "目前最高fps:%d\n"
+                            "现在的时间:%.2f ms = %.2f s\n"
+                            "点的坐标:(%f,%f)\n"
+                            "向量的数量:%llu\n"
+                            "点的数量:%llu\n"
+                            "\n%s"));
+    errStr = Util::str_unescape(ts.translate_def("errStr","错误被存储在了 data/log.txt 中\n"));
     tr_Progess = 40;
     l.info("Loading files...");
     {
         if(argc < 2){
             l.info("Given no arguments,we choose \"fft.math\" as a default file to load.");
         }else if(!strcmp(argv[1],"-help") || !strcmp(argv[1],"-h") || !strcmp(argv[1],"-?") || !strcmp(argv[1],"?")){
-            HelpPage(ts.Translate(ACCESS_TOKEN,"en_us").GetUTF8().c_str());
+            HelpPage(ts.translate_def(ALIB_DEF_ACCESS,"en_us",ALIB_ENC_UTF8).c_str());
         }else{
             opener = argv[1];
         }
@@ -317,20 +287,17 @@ int main(int argc,char * argv[]){
         }else {
             if(errors.compare("")){
                 rderr = true;
-                errors = string("无法正常加载文件，因为:\n") + errors;
+                errors = string("Failed to load files normally,because:\n") + errors;
                 l.warn(errors);
             }
-            string sx = "Loaded ";
-            sx += to_string(gc.err);
-            sx += " vectors in total.";
-            l.info(sx);
+            l() << "Loaded " << gc.err << " vectors in total." << endlog;
         }
         gc.oneeqw = 1/gc.scales;
         opx = gc.part_x;
         opy = gc.part_y;
     }
     tr_Progess = 90;
-    tr_CommS = "注册窗口,运行OpenGL...";
+    tr_CommS = ts.translate_def("load0","注册窗口,运行OpenGL......");
     {
         wcex.cbSize = sizeof(WNDCLASSEX);
         wcex.style = CS_OWNDC;
@@ -352,49 +319,46 @@ int main(int argc,char * argv[]){
             exit(-1);
         }
 
-        //Loading menus
-        HMENU controls = CreatePopupMenu();
-        HMENU view = CreatePopupMenu();
-        HMENU stores = CreatePopupMenu();
-
-        AppendMenu(menu,MF_POPUP,(UINT_PTR)controls,"控制");
-        AppendMenu(menu,MF_POPUP,(UINT_PTR)view,"显示");
-        AppendMenu(menu,MF_POPUP,(UINT_PTR)stores,"存储");
-        AppendMenu(menu,MF_STRING,mHelp,"帮助");
+        AppendMenu(menu,MF_POPUP,(UINT_PTR)controls,ts.translate_def("menu.control","控制").c_str());
+        AppendMenu(menu,MF_POPUP,(UINT_PTR)view,ts.translate_def("menu.display","显示").c_str());
+        AppendMenu(menu,MF_POPUP,(UINT_PTR)stores,ts.translate_def("menu.storage","存储").c_str());
+        AppendMenu(menu,MF_STRING,mHelp,ts.translate_def("menu.help","帮助").c_str());
 
         //views
-        AppendMenu(view,MF_CHECKED,mLines,"显示线段(L)");
+        AppendMenu(view,MF_CHECKED,mLines,ts.translate_def("menu.displayLines","轨迹(L)").c_str());
         ToggleCheckedMenu(mLines,showLines);
-        AppendMenu(view,MF_CHECKED,mCircles,"显示圆圈(O)");
+        AppendMenu(view,MF_CHECKED,mCircles,ts.translate_def("menu.displayCircles","圆圈(O)").c_str());
         ToggleCheckedMenu(mCircles,showCircles);
-        AppendMenu(view,MF_CHECKED,mDisCoord,"显示坐标系(C)");
+        AppendMenu(view,MF_CHECKED,mDisCoord,ts.translate_def("menu.displayCoordinates","坐标系(C)").c_str());
         ToggleCheckedMenu(mDisCoord,discoord);
-        AppendMenu(view,MF_CHECKED,mDisVectors,"显示向量(V)");
+        AppendMenu(view,MF_CHECKED,mDisVectors,ts.translate_def("menu.displayVectors","向量(V)").c_str());
         ToggleCheckedMenu(mDisVectors,disvec);
-        AppendMenu(view,MF_CHECKED,mDisFVec,"显示最终向量(F)");
+        AppendMenu(view,MF_CHECKED,mDisFVec,ts.translate_def("menu.displayFinalVector","最终向量(F)").c_str());
         ToggleCheckedMenu(mDisFVec,disfvec);
         AppendMenu(view,MF_SEPARATOR,0,0);
-        AppendMenu(view,MF_CHECKED,mChroma,"Chroma(M)");
-        AppendMenu(view,MF_CHECKED,mNeon,"Neon");
-        AppendMenu(view,MF_CHECKED,mFollow,"Follow");
+        AppendMenu(view,MF_CHECKED,mChroma,ts.translate_def("menu.chroma","炫彩文字(M)").c_str());
+        AppendMenu(view,MF_CHECKED,mNeon,ts.translate_def("menu.neon","炫彩线段").c_str());
+        AppendMenu(view,MF_CHECKED,mFollow,ts.translate_def("menu.follow","跟随").c_str());
         ToggleCheckedMenu(mChroma,chroma);
         ToggleCheckedMenu(mNeon,neon);
         ToggleCheckedMenu(mFollow,follow);
 
         //controls
-        AppendMenu(controls,MF_STRING,mPlay,"停止(空格)");
+        AppendMenu(controls,MF_STRING,mPlay,ts.translate_def("menu.controlPause","暂停(空格)").c_str());
         AppendMenu(controls,MF_SEPARATOR,0,0);
-        AppendMenu(controls,MF_STRING,mRepaint,"重绘(Q)");
-        AppendMenu(controls,MF_STRING,mReload,"重新加载(W)");
+        AppendMenu(controls,MF_STRING,mRepaint,ts.translate_def("menu.controlRepaint","重绘(Q)").c_str());
+        AppendMenu(controls,MF_STRING,mReload,ts.translate_def("menu.controlReload","重新加载").c_str());
+        AppendMenu(controls,MF_SEPARATOR,0,0);
+        AppendMenu(controls,MF_STRING,mBackO,ts.translate_def("menu.controlOrigin","返回原点").c_str());
 
         //stores
-        AppendMenu(stores,MF_STRING,mOpenFileP,"打开文件(O)");
-        AppendMenu(stores,MF_STRING,mNew,"读取新文件(I)");
-        AppendMenu(stores,MF_STRING,mStore,"存储数据(S)");
+        AppendMenu(stores,MF_STRING,mOpenFileP,ts.translate_def("menu.jmpToFile","转到文件(J)").c_str());
+        AppendMenu(stores,MF_STRING,mNew,ts.translate_def("menu.openNewFile","打开新文件(O)").c_str());
+        AppendMenu(stores,MF_STRING,mStore,ts.translate_def("menu.store","存储数据(S)").c_str());
 
-        hwnd = CreateWindowEx(0,"FT","Look For FT",WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
+        hwnd = CreateWindowEx(0,"FT",ts.translate_def("title.lookForFT","观察傅里叶变换").c_str(),WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
                               600,600,NULL,NULL,NULL,NULL);
-        subHWND = CreateWindowEx(0,"FT","FT's console",WS_CAPTION | WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
+        subHWND = CreateWindowEx(0,"FT",ts.translate_def("menu.console","傅里叶变换控制台").c_str(),WS_CAPTION | WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
                               424,424,hwnd,menu,NULL,NULL);
 
         ShowWindow(hwnd,SW_SHOW);
@@ -412,8 +376,8 @@ int main(int argc,char * argv[]){
     thread paint(Display);
     thread console(ConsoleDisplay);
 
-    loffset.Start();
-    fpsClk.Start();
+    loffset.start();
+    fpsClk.start();
 
     tr_Progess = 100;
 
@@ -483,21 +447,22 @@ void FlashScreen(){
     SetBkColor(desktopDC,RGB(0,0,0));
     SetTextColor(desktopDC,RGB(255,255,255));
     while(tr_Progess < 100){
-        if(updatePos.Now().offset > 1000){
-            updatePos.GetOffset();
+        if(updatePos.now().offset > 1000){
+            updatePos.getOffset();
+            updatePos.clearOffset();
             GetWindowRect(desktopWindow,&desktopRect);
             h = (desktopRect.bottom - desktopRect.top) / 5 * 3;
             w = h;
             x = ((desktopRect.right - desktopRect.left) - w)/2;
             y = ((desktopRect.bottom - desktopRect.top) - h)/2;
         }
-        if(clk_time.GetALLTime() > 16000 && ans){
-            int an = MessageBox(NULL,"向量似乎有点多是否退出","提示",MB_TOPMOST | MB_ICONQUESTION | MB_YESNO);
+        if(clk_time.getAllTime() > 16000 && ans){
+            int an = MessageBox(NULL,ts.translate_def("tooManyVecs","向量似乎有点多是否退出").c_str(),ts.translate_def("info","提示").c_str(),MB_TOPMOST | MB_ICONQUESTION | MB_YESNO);
             if(an == IDYES){
                 RedrawWindow(desktopWindow,&desktopRect,NULL,RDW_ALLCHILDREN);
                 exit(-1);
             }else{
-                MessageBox(NULL,"可随时按下ESC退出！","提示",MB_TOPMOST | MB_OK);
+                MessageBox(NULL,ts.translate_def("escInfo","可随时按下ESC退出！").c_str(),ts.translate_def("info","提示").c_str(),MB_TOPMOST | MB_OK);
             }
             ans = false;
         }
@@ -554,7 +519,7 @@ bool DealMenu(int id){
         break;
     case mPlay:
         stop = !stop;
-        SetMenuText(menu,mPlay,stop?(LPSTR)"播放(Ctrl+P)":(LPSTR)"停止(Ctrl+P)");
+        SetMenuText(menu,mPlay,stop?(LPSTR)ts.translate_def("menu.controlPlay","播放(空格)").c_str():(LPSTR)ts.translate_def("menu.controlPause","暂停(空格)").c_str());
         break;
     case mRepaint:
         calstop = true;
@@ -615,13 +580,18 @@ bool DealMenu(int id){
         opy = gc.part_y;
         if(errors.compare("")){
             rderr = true;
-            errors = string("无法正常加载文件，因为:\n") + errors;
+            errors = string("Failed to load files normally,because:\n") + errors;
             l.error(errors);
             errorFlag = true;
         }
         gc.part_x *= gc.scales;
         gc.part_y *= gc.scales;
         calstop = false;
+        break;
+    case mBackO:
+        pos.x = pos.y = 0;
+        pdpart.x = pos.x / gc.part_x;
+        pdpart.y = pos.y / gc.part_y;
         break;
 //    case :
 //         = !;
@@ -633,20 +603,22 @@ bool DealMenu(int id){
     return true;
 }
 
+void scale(bool up){
+    if(up){
+        ///use multiply else not be a round///
+        gc.oneeqw *= 1.1;
+        gc.scales = 1/gc.oneeqw;
+        if(gc.scales <= 0.001)gc.scales = 0.001;
+    }else{
+        gc.oneeqw /= 1.1;
+        gc.scales = 1/gc.oneeqw;
+        if(gc.scales <= 0.001)gc.scales = 0.001;
+    }
+    gc.part_x = opx * gc.scales;
+    gc.part_y = opy * gc.scales;
+}
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
-    if(GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000){
-        pos.y -= gc.move_speed * gc.scales * elapseTime;
-    }else if(GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000){
-        pos.y += gc.move_speed * gc.scales * elapseTime;
-    }
-    if(GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000){
-        pos.x += gc.move_speed * gc.scales * elapseTime;
-    }else if(GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000){
-        pos.x -= gc.move_speed * gc.scales * elapseTime;
-    }
-    pdpart.x = pos.x / gc.part_x;
-    pdpart.y = pos.y / gc.part_y;
     switch (uMsg){
     case WM_CLOSE:
         PostQuitMessage(0);
@@ -710,55 +682,30 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
                DealMenu(mPlay);
                 break;
             case VK_ADD:
-                ///use multiply else not be a round///
-                gc.oneeqw += gc.scale_speed * elapseTime;
-                gc.scales = 1/gc.oneeqw;
-                if(gc.scales <= 0.001)gc.scales = 0.001;
-                gc.part_x = opx * gc.scales;
-                gc.part_y = opy * gc.scales;
+                scale(true);
                 break;
             case VK_SUBTRACT:
-                gc.oneeqw -= gc.scale_speed * elapseTime / 80;
-                gc.scales = 1/gc.oneeqw;
-                if(gc.scales <= 0.001)gc.scales = 0.001;
-                gc.part_x = opx * gc.scales;
-                gc.part_y = opy * gc.scales;
+                scale(false);
                 break;
             case 229:
                 switch(lParam){
                     case 1074593793://long press
                     case 851969://'+'
-                        gc.oneeqw += gc.scale_speed * elapseTime;
-                        gc.scales = 1/gc.oneeqw;
-                        if(gc.scales <= 0.001)gc.scales = 0.001;
-                        gc.part_x = opx * gc.scales;
-                        gc.part_y = opy * gc.scales;
+                        scale(true);
                         break;
                     case 1074528257:
                     case 786433://'-'
-                        gc.oneeqw -= gc.scale_speed * elapseTime;
-                        gc.scales = 1/gc.oneeqw;
-                        if(gc.scales <= 0.001)gc.scales = 0.001;
-                        gc.part_x = opx * gc.scales;
-                        gc.part_y = opy * gc.scales;
+                        scale(false);
                         break;
                     default:
                         break;
                 }
                 break;
             case 187:
-                gc.oneeqw += gc.scale_speed * elapseTime / 80;
-                gc.scales = 1/gc.oneeqw;
-                if(gc.scales <= 0.001)gc.scales = 0.001;
-                gc.part_x = opx * gc.scales;
-                gc.part_y = opy * gc.scales;
+                scale(true);
                 break;
             case 189:
-                gc.oneeqw -= gc.scale_speed * elapseTime / 80;
-                gc.scales = 1/gc.oneeqw;
-                if(gc.scales <= 0.001)gc.scales = 0.001;
-                gc.part_x = opx * gc.scales;
-                gc.part_y = opy * gc.scales;
+                scale(false);
                 break;
         }
         pdpart.x = pos.x / gc.part_x;
@@ -819,7 +766,8 @@ void ConsoleDisplay(){
         Rectangle(hsubDC,0,0,424,424);
         if(frameGoes >= calFPSFr){
             int off = 0;
-            off = fpsClk.GetOffset();
+            off = fpsClk.getOffset();
+            fpsClk.clearOffset();
             if(off != 0){
                 preFrameC = (int)(1000 / off) * frameGoes;
                 if(preFrameC > mxFrame){
@@ -833,18 +781,11 @@ void ConsoleDisplay(){
 
         {
             int sz = sprintf(outputbuf,
-                "fps:%d\n"
-                "目前最高fps:%d\n"
-                "现在的时间:%.2f ms = %.2f s\n"
-                "点的坐标:(%f,%f)\n"
-                "向量的数量:%d\n"
-                "点的数量:%d\n"
-                "\n%s%s",
+                consoleStr.c_str(),
                 preFrameC,mxFrame,timeCur * 1000,
                 timeCur,
                 point1[point1.size()-1].x,point1[point1.size()-1].y,
-                points.size(),point1.size(),rderr?"错误被存储在了 data/log.txt 中\n":"",
-                "PS:命令行里输入 -help或者查看data/help_zh_cn.txt 来查看帮助 :=)\n");
+                points.size(),point1.size(),rderr?errStr.c_str():"");
 
             MultiLineTextOut(hsubDC,5,32,outputbuf,sz,2,metric);
 
@@ -874,11 +815,27 @@ void ConsoleDisplay(){
 void Display(){
     EnableOpenGL(hwnd, &hDC, &hRC);
     SimpFpsRestr rest(gc.frame_limit);
+    Clock movec;
+    Trigger tmove(movec,10);
+
     while(!bQuit){
 
         if(follow){
             pos.x = -point1[point1.size()-1].x;
             pos.y = -point1[point1.size()-1].y;
+            pdpart.x = pos.x / gc.part_x;
+            pdpart.y = pos.y / gc.part_y;
+        }else if(tmove.test()){
+            if(GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000){
+                pos.y -= gc.move_speed * gc.scales * 0.1;
+            }else if(GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000){
+                pos.y += gc.move_speed * gc.scales * 0.1;
+            }
+            if(GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000){
+                pos.x += gc.move_speed * gc.scales * 0.1;
+            }else if(GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000){
+                pos.x -= gc.move_speed * gc.scales * 0.1;
+            }
             pdpart.x = pos.x / gc.part_x;
             pdpart.y = pos.y / gc.part_y;
         }
@@ -945,9 +902,9 @@ void Display(){
             if(showLines){
                 glColor3f(1.0,1.0,1.0);
                 if(neon)glColor3f(
-                    0.3*sin(cneon.GetALLTime()/500.0) + 0.7,
-                    0.3*cos(cneon.GetALLTime()/500.0) + 0.7,
-                    0.3*sin(2*cneon.GetALLTime()/400.0) + 0.7
+                    0.3*sin(cneon.getAllTime()/500.0) + 0.7,
+                    0.3*cos(cneon.getAllTime()/500.0) + 0.7,
+                    0.3*sin(2*cneon.getAllTime()/400.0) + 0.7
                 );
                 glVertex2f(point1[0].x/ gc.part_x + pdpart.x,point1[0].y/ gc.part_y + pdpart.y);
                 for(unsigned int i = 0;i < point1.size();i++){
@@ -973,7 +930,8 @@ void Display(){
         if(gc.frame_limit > 0){
             rest.sleep();
         }
-        elapseTime = loffset.GetOffset();
+        elapseTime = loffset.getOffset();
+        loffset.clearOffset();
     }
     DisableOpenGL(hwnd, hDC, hRC);
 }

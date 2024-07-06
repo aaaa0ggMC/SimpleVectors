@@ -6,10 +6,11 @@
 #include <stdio.h>
 #include <string>
 #include <fstream>
-#include <CClock.h>
+#include <alib/aclock.h>
 #include <ctype.h>
 
 using namespace std;
+using namespace alib::ng;
 
 #define RadToDeg(x) (((x)/(PI))*(180))
 float degToRad = ((PI)/180);
@@ -170,20 +171,23 @@ string GetErrors(){
 }
 
 struct SimpFpsRestr{
-    cck::Clock clk;
+    Clock clk;
     float desire;
-    SimpFpsRestr(float wantFps = 60){
+    Trigger trig;
+
+    SimpFpsRestr(float wantFps = 60):trig(clk,0){
         desire = 1000 / wantFps;
+        trig.setDuration(desire);
     }
 
     void sleep(){
-        float elapse = clk.GetOffset();
-        if(elapse >= desire)return;
-        Sleep(desire - elapse);
+        if(trig.test())return;
+        Sleep(desire - (clk.getAllTime() - trig.rec));
     }
 
     void reset(float wantFps){
         desire = 1000 / wantFps;
+        trig.setDuration(desire);
     }
 
 };

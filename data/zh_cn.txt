@@ -1,4 +1,0 @@
-{
-    "Language":"简体中文",
-    "Access":"zh_cn"
-}
