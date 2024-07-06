@@ -6,7 +6,7 @@ load0 = "Registering window,launching OpenGL..."
 tooManyVecs = "Vectors seem to be too much,exit now?"
 info = "Information"
 escInfo = "Press ESC at any time to exit the program!"
-consoleStr = "fps:%d\Highest fps:%d\nCurrent time:%.2f ms = %.2f s\nPoint:(%f,%f)\n向量的数量:%llu\n点的数量:%llu\n\n%s"
+consoleStr = "fps:%d\nHighest fps:%d\nCurrent time:%.2f ms = %.2f s\nPoint:(%f,%f)\nVectors:%llu \nPoints:%llu \n\n%s"
 errStr = "Errors are stored in data/log.txt\n"
 
 [menu]
@@ -27,9 +27,12 @@ controlPlay = "Play(Space)"
 controlRepaint = "Repaint(R)"
 controlReload = "Reload"
 controlOrigin = "BackToOrigin"
+controlConfig = "ReloadDisplayConfig(R)"
 jmpToFile = "JumpToFile(J)"
 openNewFile = "OpenNew(O)"
 store = "StoreData(S)"
+autoCfg = "AutoLoadConfig"
+autoDis = "AutoLoadDisplayConfig"
 
 [title]
 lookForFT = "Look for FT"

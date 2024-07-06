@@ -2,8 +2,11 @@ language_id = "en_us"
 log_level =1118481
 follow = false
 neon = false
-chroma = true
+chroma = false
 lastDir = ""
+threeDimension = false
+autoLoadConfig = false
+autoLoadDisplayConfig = false
 [display]
 finalVector = true
 vectors = true

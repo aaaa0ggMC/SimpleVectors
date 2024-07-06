@@ -1,8 +1,7 @@
 ///Structure:SEH
-#define private public
 //Base C++ Libraries
-#include <string>
 #include <iostream>
+#include <filesystem>
 #include <cmath>
 #include <fstream>
 #include <cstdio>
@@ -12,6 +11,7 @@
 #include <thread>
 #include <ctime>
 #include <vector>
+#include <string>
 
 #include <stdlib.h>
 
@@ -35,6 +35,7 @@
 #include "vmath.hpp"
 
 #define DATA_CONFIG "data/config.toml"
+#define DATA_DISPLAY "data/display.toml"
 #define DATA_PATH "data/"
 #define DATA_TRANSLATIONS "data/translations"
 #define DATA_OUTPUT "data/out.txt"
@@ -81,6 +82,7 @@ int MultiLineTextOut(HDC pDC,int x,int y,const char* text,size_t,int LineSpace,T
 void ConsoleDisplay();
 bool DealMenu(int id);
 int OpenFileS();
+void loadDisplayConfig();
 
 ///Logs//
 Logger logSaver;
@@ -129,6 +131,9 @@ MENUITEM(mHelp,14);
 MENUITEM(mNeon,15);
 MENUITEM(mFollow,16);
 MENUITEM(mBackO,17);
+MENUITEM(mDConfig,18);
+MENUITEM(mAutoCfg,19);
+MENUITEM(mAutoDis,20);
 
 bool stop = false;
 bool calstop = false;
@@ -141,6 +146,10 @@ bool disvec = true;
 bool disfvec = true;
 bool neon = false;
 bool follow = false;
+bool threed = false;
+bool focus;
+bool autoCfg = false;
+bool autoDis = true;
 
 //下一帧时间增幅倍数
 unsigned int floating_scaling = 5;
@@ -181,10 +190,12 @@ int mxFrame = 0;
 float opx = 0,opy = 0;
 float timeCur;
 
+filesystem::file_time_type lw_display,lw_config;
 
 Clock cneon;
 
 void ToggleCheckedMenu(int mi,bool stat,HMENU m = menu);
+void updateConfigLastWrite();
 
 #define MAX_INFO_SIZE 1024
 #define MAX_INFO_SIZE_S "1024"
@@ -211,11 +222,14 @@ int main(int argc,char * argv[]){
         ofstream ofs(DATA_CONFIG);
         if(ofs.bad())return;
         ofs << "language_id = \"" << ts.translate_def(ALIB_DEF_ACCESS,"en_us",ALIB_ENC_UTF8) << "\"\n";
-        ofs << "log_level =" << logSaver.showlg << "\n";
+        ofs << "log_level =" << logSaver.getLogVisibilities() << "\n";
         ofs << "follow = " << bool2str(follow) << "\n";
         ofs << "neon = " << bool2str(neon) << "\n";
         ofs << "chroma = " << bool2str(chroma) << "\n";
         ofs << "lastDir = \"" << lastDir << "\"\n";
+        ofs << "threeDimension = " << bool2str(threed) << "\n";
+        ofs << "autoLoadConfig = " << bool2str(autoCfg) << "\n";
+        ofs << "autoLoadDisplayConfig = " << bool2str(autoDis) << "\n";
         ofs << "[display]" << "\n";
         ofs << "finalVector = " << bool2str(disfvec) << "\n";
         ofs << "vectors = " << bool2str(disvec) << "\n";
@@ -244,12 +258,13 @@ int main(int argc,char * argv[]){
             errorFlag = true;
         }else{
             #define boolCheck(s) ((!(s))?0:(strcmp(*s,"1")?0:1))
+            #define value_unfold(v,def,METHOD) ((!(v))?(def):(METHOD(*v)))
             auto value = doc.get("language_id");
-            ts.loadTranslation((!value)?"en_us":*value);
+            ts.loadTranslation(value_unfold(value,"en_us",));
             value = doc.get("log_level");
-            logSaver.setLogVisibilities((!value)?LOG_FULL:atoi(*value));
+            logSaver.setLogVisibilities(value_unfold(value,LOG_FULL,atoi));
             value = doc.get("lastDir");
-            lastDir = (!value)?"":(*value);
+            lastDir = value_unfold(value,"",);
             follow = boolCheck(doc.get("follow"));
             chroma = boolCheck(doc.get("chroma"));
             neon = boolCheck(doc.get("neon"));
@@ -258,17 +273,25 @@ int main(int argc,char * argv[]){
             showCircles = boolCheck(doc.get("display.rotatingCircles"));
             showLines = boolCheck(doc.get("display.track"));
             disfvec = boolCheck(doc.get("display.finalVector"));
+            threed = boolCheck(doc.get("threeDimension"));
+            autoDis = boolCheck(doc.get("autoLoadDisplayConfig"));
+            autoCfg = boolCheck(doc.get("autoLoadConfig"));
         }
+        loadDisplayConfig();
+        gc.oneeqw = 1/gc.scales;
+        opx = gc.part_x;
+        opy = gc.part_y;
     }
-    consoleStr = Util::str_unescape(ts.translate_def("consoleStr",
+    //toml++ auto unescapes
+    consoleStr = ts.translate_def("consoleStr",
                             "fps:%d\n"
                             "目前最高fps:%d\n"
                             "现在的时间:%.2f ms = %.2f s\n"
                             "点的坐标:(%f,%f)\n"
                             "向量的数量:%llu\n"
                             "点的数量:%llu\n"
-                            "\n%s"));
-    errStr = Util::str_unescape(ts.translate_def("errStr","错误被存储在了 data/log.txt 中\n"));
+                            "\n%s");
+    errStr = ts.translate_def("errStr","错误被存储在了 data/log.txt 中\n");
     tr_Progess = 40;
     l.info("Loading files...");
     {
@@ -348,6 +371,12 @@ int main(int argc,char * argv[]){
         AppendMenu(controls,MF_SEPARATOR,0,0);
         AppendMenu(controls,MF_STRING,mRepaint,ts.translate_def("menu.controlRepaint","重绘(Q)").c_str());
         AppendMenu(controls,MF_STRING,mReload,ts.translate_def("menu.controlReload","重新加载").c_str());
+        AppendMenu(controls,MF_STRING,mDConfig,ts.translate_def("menu.controlConfig","重新加载显示配置(R)").c_str());
+        AppendMenu(controls,MF_SEPARATOR,0,0);
+        AppendMenu(controls,MF_CHECKED,mAutoCfg,ts.translate_def("menu.autoCfg","自动加载配置").c_str());
+        AppendMenu(controls,MF_CHECKED,mAutoDis,ts.translate_def("menu.autoDis","自动加载显示配置").c_str());
+        ToggleCheckedMenu(mAutoCfg,autoCfg);
+        ToggleCheckedMenu(mAutoDis,autoDis);
         AppendMenu(controls,MF_SEPARATOR,0,0);
         AppendMenu(controls,MF_STRING,mBackO,ts.translate_def("menu.controlOrigin","返回原点").c_str());
 
@@ -358,7 +387,7 @@ int main(int argc,char * argv[]){
 
         hwnd = CreateWindowEx(0,"FT",ts.translate_def("title.lookForFT","观察傅里叶变换").c_str(),WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,CW_USEDEFAULT,CW_USEDEFAULT,
                               600,600,NULL,NULL,NULL,NULL);
-        subHWND = CreateWindowEx(0,"FT",ts.translate_def("menu.console","傅里叶变换控制台").c_str(),WS_CAPTION | WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
+        subHWND = CreateWindowEx(0,"FT",ts.translate_def("title.console","傅里叶变换控制台").c_str(),WS_CAPTION | WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
                               424,424,hwnd,menu,NULL,NULL);
 
         ShowWindow(hwnd,SW_SHOW);
@@ -493,6 +522,9 @@ bool DealMenu(int id){
         neon = !neon;
         ToggleCheckedMenu(mNeon,neon);
         break;
+    case mDConfig:
+        loadDisplayConfig();
+        break;
     case mFollow:
         follow = !follow;
         ToggleCheckedMenu(mFollow,follow);
@@ -504,6 +536,14 @@ bool DealMenu(int id){
     case mLines:
         showLines = !showLines;
         ToggleCheckedMenu(mLines,showLines);
+        break;
+    case mAutoCfg:
+        autoCfg = !autoCfg;
+        ToggleCheckedMenu(mAutoCfg,autoCfg);
+        break;
+    case mAutoDis:
+        autoDis = !autoDis;
+        ToggleCheckedMenu(mAutoDis,autoDis);
         break;
     case mDisCoord:
         discoord = !discoord;
@@ -627,6 +667,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
         bool ret = DealMenu(LOWORD(wParam));
         if(ret)return 0;
     }
+    case WM_SETFOCUS:
+        focus = true;
+        break;
+    case WM_KILLFOCUS:
+        focus = false;
+        break;
     case WM_KEYDOWN:{
         switch (wParam)
         {
@@ -665,6 +711,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
                 break;
             case 'O':
                 DealMenu(mCircles);
+                break;
+            case 'R':
+                DealMenu(mDConfig);
                 break;
             case 'C':
                 DealMenu(mDisCoord);
@@ -780,6 +829,16 @@ void ConsoleDisplay(){
         SetTextColor(hsubDC,RGB(0,255,255));
 
         {
+            ///更新配置文件
+            auto p0 = lw_config;
+            auto p1 = lw_display;
+            updateConfigLastWrite();
+            if(autoCfg && p0 != lw_config){
+                DealMenu(mReload);
+            }
+            if(autoDis && p1 != lw_display){
+                DealMenu(mDConfig);
+            }
             int sz = sprintf(outputbuf,
                 consoleStr.c_str(),
                 preFrameC,mxFrame,timeCur * 1000,
@@ -825,7 +884,7 @@ void Display(){
             pos.y = -point1[point1.size()-1].y;
             pdpart.x = pos.x / gc.part_x;
             pdpart.y = pos.y / gc.part_y;
-        }else if(tmove.test()){
+        }else if(focus && tmove.test()){
             if(GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000){
                 pos.y -= gc.move_speed * gc.scales * 0.1;
             }else if(GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000){
@@ -849,15 +908,22 @@ void Display(){
         glPushMatrix();
 //        glRotatef(theta, 0.0f, 1.0f, 0.0f);
 
-        glColor3f(1.0,1.0,1.0);
         glBegin(GL_LINES);
             //Draw the line
             if(discoord){
+                glColor3f(1.0,0,0);
                 glVertex2f(pdpart.x,-1);
                 glVertex2f(pdpart.x,1);
+                glColor3f(0,1.0,0);
                 glVertex2f(-1,pdpart.y);
                 glVertex2f(1,pdpart.y);
+                if(threed){
+                    glColor3f(0,0,1.0);
+                    glVertex3f(pdpart.x,pdpart.y,-1);
+                    glVertex3f(pdpart.x,pdpart.y,1);
+                }
             }
+            glColor3f(1.0,1.0,1.0);
             //Draw the vectors trail
             Vector def = {0,0,0,0};
             def.x = pos.x;
@@ -910,9 +976,6 @@ void Display(){
                 for(unsigned int i = 0;i < point1.size();i++){
                     tx = point1[i].x / gc.part_x + pdpart.x;
                     ty = point1[i].y / gc.part_y + pdpart.y;
-                    //if(neon){
-                    //    glColor3f((rand()%128 / 256.0 + 0.5),(rand()%128 / 256.0 + 0.5),(rand()%128 / 256.0 + 0.5));
-                    //}
                     glVertex2f(tx,ty);
                     glVertex2f(tx,ty);
                 }
@@ -952,7 +1015,7 @@ void UpdatingPainting(){
                 b.y += points[i].y;
             }
             point1.push_back(b);
-            if(gc.vertices_limit != -1 && point1.size() > (unsigned int)(gc.vertices_limit))
+            if(gc.vertices_limit < 0 && point1.size() > (unsigned int)(gc.vertices_limit))
                 point1.erase(point1.begin());
             timeCur += 0.01 * gc.run_speed;
         }
@@ -1002,4 +1065,25 @@ int OpenFileS(){
         DealMenu(mReload);
     }
     return 0;
+}
+
+void loadDisplayConfig(){
+    GDoc status;
+    if(!status.read_parseFileTOML(DATA_DISPLAY)){
+        gc.frame_limit = value_unfold(status.get("frameLimit"),180,atof);
+        gc.move_speed = value_unfold(status.get("moveSpeed"),1,atof);
+        gc.scale_speed = value_unfold(status.get("scaleSpeed"),1,atof);
+        gc.storing_limi = value_unfold(status.get("fenv"),5,atof);
+        gc.vertices_limit = value_unfold(status.get("verticesLimit"),4096,atof);
+        gc.part_x = value_unfold(status.get("partx"),8,atof);
+        gc.part_y = value_unfold(status.get("party"),8,atof);
+        gc.run_speed = value_unfold(status.get("calcSpeed"),1,atof);
+    }else{
+        l(LOG_ERROR) << "Failed to load display config." << endlog;
+    }
+}
+
+void updateConfigLastWrite(){
+    lw_display = filesystem::last_write_time(DATA_DISPLAY);
+    lw_config = filesystem::last_write_time(DATA_CONFIG);
 }

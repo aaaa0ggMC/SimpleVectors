@@ -1,0 +1,7 @@
+partx = 10
+party = 10
+calcSpeed = 0.1
+frameLimit = 6000
+scaleSpeed = 3
+fenv = 5
+moveSpeed = 1
