@@ -37,7 +37,7 @@
 #define DATA_OUTPUT "data/out.txt"
 
 using namespace std;
-using namespace alib::ng;
+using namespace alib::g3;
 
 struct GConfig{
     int err;
