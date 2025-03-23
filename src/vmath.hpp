@@ -6,11 +6,10 @@
 #include <stdio.h>
 #include <string>
 #include <fstream>
-#include <alib/aclock.h>
 #include <ctype.h>
 
 using namespace std;
-using namespace alib::ng;
+using namespace alib::g3;
 
 #define RadToDeg(x) (((x)/(PI))*(180))
 float degToRad = ((PI)/180);
@@ -169,27 +168,5 @@ vector<Vector> readVectors(string fname,int & err,float & px,float & py,
 string GetErrors(){
     return errors;
 }
-
-struct SimpFpsRestr{
-    Clock clk;
-    float desire;
-    Trigger trig;
-
-    SimpFpsRestr(float wantFps = 60):trig(clk,0){
-        desire = 1000 / wantFps;
-        trig.setDuration(desire);
-    }
-
-    void sleep(){
-        if(trig.test())return;
-        Sleep(desire - (clk.getAllTime() - trig.rec));
-    }
-
-    void reset(float wantFps){
-        desire = 1000 / wantFps;
-        trig.setDuration(desire);
-    }
-
-};
 
 #endif // VMATH_HPP_INCLUDED

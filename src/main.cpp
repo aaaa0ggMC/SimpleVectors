@@ -23,14 +23,10 @@
 #include <GL/gl.h>
 
 //aaaa0ggmc Libraries
-#include <alib/aclock.h>
-#include <alib/atranslator.h>
-#include <alib/astring.h>
-#include <alib/alogger.h>
-#include <alib/adata.h>
-
-//Resources
-#include "rc.h"
+#include <alib-g3/aclock.h>
+#include <alib-g3/atranslator.h>
+#include <alib-g3/alogger.h>
+#include <alib-g3/adata.h>
 
 #include "vmath.hpp"
 
@@ -205,11 +201,15 @@ int main(int argc,char * argv[]){
 
     srand(time(0));
 
+    auto tconsole = std::make_shared<lot::Console>();
+    auto tfile = std::make_shared<lot::SingleFile>();
+
     outputbuf = new char[MAX_INFO_SIZE];
     ZeroMemory(outputbuf,sizeof(char) * MAX_INFO_SIZE);
 
     //Init LogSavers
-    logSaver.setOutputFile("data/log.txt");
+    logSaver.appendLogOutputTarget("console",tconsole);
+    logSaver.appendLogOutputTarget("file",tfile);
     //Flash Window
     {
         thread tr(FlashScreen);
@@ -221,7 +221,7 @@ int main(int argc,char * argv[]){
         #define bool2str(x) ((x)?"true":"false")
         ofstream ofs(DATA_CONFIG);
         if(ofs.bad())return;
-        ofs << "language_id = \"" << ts.translate_def(ALIB_DEF_ACCESS,"en_us",ALIB_ENC_UTF8) << "\"\n";
+        ofs << "language_id = \"" << ts.translate_def(ALIB_DEF_ACCESS,"en_us") << "\"\n";
         ofs << "log_level =" << logSaver.getLogVisibilities() << "\n";
         ofs << "follow = " << bool2str(follow) << "\n";
         ofs << "neon = " << bool2str(neon) << "\n";
@@ -298,7 +298,7 @@ int main(int argc,char * argv[]){
         if(argc < 2){
             l.info("Given no arguments,we choose \"fft.math\" as a default file to load.");
         }else if(!strcmp(argv[1],"-help") || !strcmp(argv[1],"-h") || !strcmp(argv[1],"-?") || !strcmp(argv[1],"?")){
-            HelpPage(ts.translate_def(ALIB_DEF_ACCESS,"en_us",ALIB_ENC_UTF8).c_str());
+            HelpPage(ts.translate_def(ALIB_DEF_ACCESS,"en_us").c_str());
         }else{
             opener = argv[1];
         }
@@ -805,7 +805,7 @@ void DisableOpenGL (HWND hwnd, HDC hDC, HGLRC hRC){
 
 #define calFPSFr 15
 void ConsoleDisplay(){
-    SimpFpsRestr restrictFps(30);
+    RateLimiter restrictFps(30);
     while(!bQuit){
         ///Draw To Console
         SelectBitmap(hsubDC,bmp);
@@ -866,14 +866,14 @@ void ConsoleDisplay(){
             }
         }
         BitBlt(subDC,0,0,424,424,hsubDC,0,0,SRCCOPY);
-        restrictFps.sleep();
+        restrictFps.wait();
     }
 }
 
 #define PerSpec 100
 void Display(){
     EnableOpenGL(hwnd, &hDC, &hRC);
-    SimpFpsRestr rest(gc.frame_limit);
+    RateLimiter rest(gc.frame_limit);
     Clock movec;
     Trigger tmove(movec,10);
 
@@ -991,7 +991,7 @@ void Display(){
         glPopMatrix();
         SwapBuffers(hDC);
         if(gc.frame_limit > 0){
-            rest.sleep();
+            rest.wait();
         }
         elapseTime = loffset.getOffset();
         loffset.clearOffset();
@@ -1000,7 +1000,7 @@ void Display(){
 }
 
 void UpdatingPainting(){
-    SimpFpsRestr rest(100);
+    RateLimiter rest(100);
     while(!bQuit){
         ///calstop : stop multiple thread causes undefine behavior
         if((!stop && !calstop) || nextFrame){
@@ -1019,7 +1019,7 @@ void UpdatingPainting(){
                 point1.erase(point1.begin());
             timeCur += 0.01 * gc.run_speed;
         }
-        rest.sleep();
+        rest.wait();
     }
 }
 
