@@ -13,7 +13,7 @@ find /ucrt64/lib -name "*.dll.a" -delete
 echo 'Building alib'
 git clone https://github.com/aaaa0ggMC/UnlimitedLife-Linux.git
 cd UnlimitedLife-Linux
-cp -r ./CDep/headers/* $ROOT_PATH/links/
+cp -r ./CDep/headers/* $ROOT_PATH/src/
 echo 'Headers'
 ls $ROOT_PATH/src
 sh configure_win_msys2.sh

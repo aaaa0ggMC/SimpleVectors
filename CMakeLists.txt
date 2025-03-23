@@ -9,6 +9,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${build_dir})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${build_dir})
 
 include_directories(./UnlimitedLife-Linux/CDep/headers)
+include_directories(./src/)
 link_directories(./links/)
 aux_source_directory("./src" FFT-SRC)
 add_executable(FFT ${FFT-SRC})
