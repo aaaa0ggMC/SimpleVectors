@@ -35,6 +35,7 @@
 #define DATA_PATH "data/"
 #define DATA_TRANSLATIONS "data/translations"
 #define DATA_OUTPUT "data/out.txt"
+#define DATA_LOG "data/log.txt"
 
 using namespace std;
 using namespace alib::g3;
@@ -89,7 +90,7 @@ string tr_CommS = "";
 atomic<int> tr_Progess = 0;
 
 ///Translations///
-Translator ts;
+Translator ts("en_us");
 
 GConfig gc;
 
@@ -202,7 +203,7 @@ int main(int argc,char * argv[]){
     srand(time(0));
 
     auto tconsole = std::make_shared<lot::Console>();
-    auto tfile = std::make_shared<lot::SingleFile>();
+    auto tfile = std::make_shared<lot::SingleFile>(DATA_LOG);
 
     outputbuf = new char[MAX_INFO_SIZE];
     ZeroMemory(outputbuf,sizeof(char) * MAX_INFO_SIZE);
@@ -222,7 +223,6 @@ int main(int argc,char * argv[]){
         ofstream ofs(DATA_CONFIG);
         if(ofs.bad())return;
         ofs << "language_id = \"" << ts.translate_def(ALIB_DEF_ACCESS,"en_us") << "\"\n";
-        ofs << "log_level =" << logSaver.getLogVisibilities() << "\n";
         ofs << "follow = " << bool2str(follow) << "\n";
         ofs << "neon = " << bool2str(neon) << "\n";
         ofs << "chroma = " << bool2str(chroma) << "\n";
@@ -261,8 +261,6 @@ int main(int argc,char * argv[]){
             #define value_unfold(v,def,METHOD) ((!(v))?(def):(METHOD(*v)))
             auto value = doc.get("language_id");
             ts.loadTranslation(value_unfold(value,"en_us",));
-            value = doc.get("log_level");
-            logSaver.setLogVisibilities(value_unfold(value,LOG_FULL,atoi));
             value = doc.get("lastDir");
             lastDir = value_unfold(value,"",);
             follow = boolCheck(doc.get("follow"));
@@ -457,7 +455,7 @@ void HelpPage(const char * s){
 
 #define SLP_TIME 20
 void FlashScreen(){
-    HICON ico = LoadIcon(GetModuleHandle(NULL),MAKEINTRESOURCE(MAIN_ICON));
+    HICON ico = LoadIcon(NULL , IDI_APPLICATION);
     DWORD w = 0,h = 0;
     DWORD x = 0,y = 0;
     HDC desktopDC = GetDC(NULL);
