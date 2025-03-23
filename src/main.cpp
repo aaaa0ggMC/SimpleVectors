@@ -23,10 +23,10 @@
 #include <GL/gl.h>
 
 //aaaa0ggmc Libraries
-#include <alib-g3/aclock.h>
-#include <alib-g3/atranslator.h>
-#include <alib-g3/alogger.h>
-#include <alib-g3/adata.h>
+#include "alib-g3/aclock.h"
+#include "alib-g3/atranslator.h"
+#include "alib-g3/alogger.h"
+#include "alib-g3/adata.h"
 
 #include "vmath.hpp"
 
