@@ -1,3 +1,6 @@
+CBuild/
+CBuild_CACHE_WIN/
+
 # Prerequisites
 *.d
 
