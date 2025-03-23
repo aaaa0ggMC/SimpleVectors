@@ -9,7 +9,6 @@
 #include <ctype.h>
 
 using namespace std;
-using namespace alib::g3;
 
 #define RadToDeg(x) (((x)/(PI))*(180))
 float degToRad = ((PI)/180);
